@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lumintale</title>
   <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
 </head>
 <body>
   <canvas id="c"></canvas>
@@ -89,6 +90,29 @@
       <span class="setting-label">Light Mode</span>
       <div class="toggle" id="mode-toggle"><div class="toggle-thumb"></div></div>
     </div>
+
+    <div class="divider"></div>
+
+    <div class="setting-group">
+      <div class="setting-row">
+        <span class="setting-label">Data Source</span>
+        <span class="setting-meta" id="source-status"></span>
+      </div>
+      <div id="source-grid">
+        <button class="source-btn active" data-source="random">Random</button>
+        <button class="source-btn" data-source="seismic">Seismic</button>
+        <button class="source-btn" data-source="daynight">World</button>
+        <button class="source-btn" data-source="mic">Sound</button>
+      </div>
+      <div class="setting-row" id="map-toggle-row" style="display:none">
+        <span class="setting-label" style="font-size:12.5px;opacity:0.7">Map Outline</span>
+        <div class="toggle active" id="map-toggle"><div class="toggle-thumb"></div></div>
+      </div>
+      <div class="setting-row" id="daynight-time-row" style="display:none">
+        <span class="setting-label" style="font-size:12.5px;opacity:0.7">UTC Time</span>
+        <span class="setting-meta" id="daynight-time">--:--:--</span>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -97,6 +121,7 @@
     let isLightMode = false;
     let ledColor = '#f5c842';
     let brightnessLevel = 1.0;
+    let showMapOutline = true;
 
     const getBgColor  = () => isLightMode ? '#e0e0e0' : '#1f1f1f';
     const getOffColor = () => isLightMode ? '#c2c2c2' : '#181818';
@@ -115,6 +140,181 @@
     const canvas = document.getElementById('c');
     const ctx    = canvas.getContext('2d');
 
+    // ---- World map (TopoJSON) ----
+    let worldGeo     = null;   // GeoJSON FeatureCollection of land
+    let outlineCanvas = null;  // pre-rendered map outline (redrawn on resize)
+    let seismicPool  = null;   // Set of LED indices near today's earthquakes
+
+    // ---- Day/Night ----
+    let landPixelData  = null; // Uint8ClampedArray of filled-land canvas (for hit testing)
+    let landCanvasW    = 0, landCanvasH = 0;
+    let daynightColors = null; // per-LED color strings (only in daynight mode)
+    let daynightTimer  = null; // setInterval for clock + redraw
+    const daynightTimeEl = document.getElementById('daynight-time');
+    const daynightTimeRow = document.getElementById('daynight-time-row');
+
+    // Build filled-land pixel cache for land/ocean testing
+    function buildLandPixelData() {
+      if (!worldGeo) return;
+      const lc = document.createElement('canvas');
+      lc.width = canvas.width; lc.height = canvas.height;
+      landCanvasW = lc.width;  landCanvasH = lc.height;
+      const lctx = lc.getContext('2d');
+      lctx.fillStyle = '#000';
+      lctx.fillRect(0, 0, lc.width, lc.height);
+      lctx.fillStyle = '#fff';
+      worldGeo.features.forEach(f => drawGeoShape(lctx, f.geometry, true));
+      landPixelData = lctx.getImageData(0, 0, lc.width, lc.height).data;
+    }
+
+    function isOnLand(idx) {
+      if (!landPixelData) return false;
+      const [x, y] = dotXY(idx);
+      const px = Math.min(landCanvasW - 1, Math.max(0, Math.round(x)));
+      const py = Math.min(landCanvasH - 1, Math.max(0, Math.round(y)));
+      return landPixelData[(py * landCanvasW + px) * 4] > 128;
+    }
+
+    // Solar elevation angle in degrees for given lat/lon at current UTC time
+    function solarElevation(lat, lon) {
+      const now  = new Date();
+      const doy  = Math.floor((now - new Date(now.getUTCFullYear(), 0, 0)) / 86400000);
+      const decl = -23.45 * Math.cos((360 / 365) * (doy + 10) * Math.PI / 180);
+      const utcH = now.getUTCHours() + now.getUTCMinutes() / 60 + now.getUTCSeconds() / 3600;
+      const solar_noon = 12 - lon / 15;
+      const ha   = (utcH - solar_noon) * 15; // hour angle in degrees
+      const latR = lat  * Math.PI / 180;
+      const decR = decl * Math.PI / 180;
+      const haR  = ha   * Math.PI / 180;
+      return Math.asin(
+        Math.sin(latR) * Math.sin(decR) + Math.cos(latR) * Math.cos(decR) * Math.cos(haR)
+      ) * 180 / Math.PI;
+    }
+
+    // LED color from solar elevation (day=white, twilight=amber, night=off)
+    function daynightLEDColor(elev) {
+      if (elev > 6)   return applyBrightness('#fffde8', isLightMode ? 0.55 : 1.0); // full daylight
+      if (elev > 0)   return applyBrightness('#ffd080', isLightMode ? 0.55 : 1.0); // golden hour
+      if (elev > -6)  return applyBrightness('#ff7840', isLightMode ? 0.55 : 1.0); // civil twilight
+      if (elev > -12) return applyBrightness('#7030c0', isLightMode ? 0.55 : 1.0); // nautical twilight
+      return applyBrightness('#3b0082', isLightMode ? 0.55 : 1.0); // night — indigo
+    }
+
+    function buildDayNightState() {
+      if (!landPixelData) return;
+      daynightColors = new Array(TOTAL).fill(null);
+      litSet.forEach(i => { state[i] = 0; });
+      litSet.clear();
+      for (let i = 0; i < TOTAL; i++) {
+        if (!isOnLand(i)) continue;
+        const col = i % COLS, row = (i / COLS) | 0;
+        const lon = (col + 0.5) / COLS * 360 - 180;
+        const lat = 90 - (row + 0.5) / ROWS * 180;
+        const elev  = solarElevation(lat, lon);
+        const color = daynightLEDColor(elev);
+        daynightColors[i] = color;
+        if (color) { state[i] = 1; litSet.add(i); }
+      }
+      TARGET_ON = litSet.size;
+      drawAll();
+    }
+
+    function tickDayNight() {
+      const now = new Date();
+      const h = String(now.getUTCHours()).padStart(2,'0');
+      const m = String(now.getUTCMinutes()).padStart(2,'0');
+      const s = String(now.getUTCSeconds()).padStart(2,'0');
+      daynightTimeEl.textContent = `${h}:${m}:${s}`;
+      // Rebuild solar state every minute
+      if (now.getUTCSeconds() === 0) buildDayNightState();
+    }
+
+    function geoProject(lon, lat) {
+      return [
+        ((lon + 180) / 360) * canvas.width,
+        ((90  - lat) / 180) * canvas.height
+      ];
+    }
+
+    function drawGeoShape(targetCtx, geometry, filled) {
+      const rings = geometry.type === 'Polygon'
+        ? geometry.coordinates
+        : geometry.type === 'MultiPolygon'
+          ? geometry.coordinates.flat(1)
+          : [];
+      rings.forEach(ring => {
+        targetCtx.beginPath();
+        let prevLon = null;
+        let hadJump = false;
+        ring.forEach(([lon, lat]) => {
+          const jump = prevLon !== null && Math.abs(lon - prevLon) > 180;
+          if (jump) hadJump = true;
+          const [x, y] = geoProject(lon, lat);
+          jump || prevLon === null ? targetCtx.moveTo(x, y) : targetCtx.lineTo(x, y);
+          prevLon = lon;
+        });
+        if (!hadJump) targetCtx.closePath();
+        filled ? targetCtx.fill() : targetCtx.stroke();
+      });
+    }
+
+    function buildOutlineCanvas() {
+      if (!worldGeo) return;
+      outlineCanvas = document.createElement('canvas');
+      outlineCanvas.width  = canvas.width;
+      outlineCanvas.height = canvas.height;
+      const oc = outlineCanvas.getContext('2d');
+      oc.clearRect(0, 0, outlineCanvas.width, outlineCanvas.height);
+      oc.strokeStyle = isLightMode ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.22)';
+      oc.lineWidth   = 0.6;
+      worldGeo.features.forEach(f => drawGeoShape(oc, f.geometry, false));
+    }
+
+    async function loadWorldMap() {
+      try {
+        const topo = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r => r.json());
+        worldGeo = topojson.feature(topo, topo.objects.land);
+        buildOutlineCanvas();
+        buildLandPixelData();
+        if (dataSource === 'daynight') buildDayNightState();
+      } catch { /* silently skip if offline */ }
+    }
+
+    // Map a geographic coordinate to the nearest LED index
+    function geoToLedIdx(lat, lon) {
+      const [x, y] = geoProject(lon, lat);
+      const col = Math.min(COLS - 1, Math.max(0, Math.round(x / SPACING - 0.5)));
+      const row = Math.min(ROWS - 1, Math.max(0, Math.round(y / SPACING - 0.5)));
+      return row * COLS + col;
+    }
+
+    // Build seismicPool from a list of {lat, lon, mag} quake objects
+    function buildSeismicPool(quakes) {
+      seismicPool = new Set();
+      quakes.forEach(({ lat, lon, mag }) => {
+        const radius = Math.max(1, Math.round(mag * 0.5));
+        const [cx, cy] = geoProject(lon, lat);
+        for (let dr = -radius; dr <= radius; dr++) {
+          for (let dc = -radius; dc <= radius; dc++) {
+            if (dr * dr + dc * dc > radius * radius) continue;
+            const col = Math.round(cx / SPACING) + dc;
+            const row = Math.round(cy / SPACING) + dr;
+            if (col < 0 || col >= COLS || row < 0 || row >= ROWS) continue;
+            seismicPool.add(row * COLS + col);
+          }
+        }
+      });
+      // Reset lit state to seismic pool, keeping ~70% lit
+      litSet.forEach(i => { state[i] = 0; });
+      litSet.clear();
+      TARGET_ON = Math.round(seismicPool.size * 0.7);
+      for (const i of seismicPool) {
+        if (litSet.size >= TARGET_ON) break;
+        state[i] = 1; litSet.add(i);
+      }
+      drawAll();
+    }
+
     let COLS, ROWS, TOTAL;
 
     function resize() {
@@ -123,6 +323,8 @@
       COLS  = Math.floor(canvas.width  / SPACING);
       ROWS  = Math.floor(canvas.height / SPACING);
       TOTAL = COLS * ROWS;
+      buildOutlineCanvas();
+      buildLandPixelData();
       init();
     }
 
@@ -138,11 +340,18 @@
     }
 
     function turnOnRandom() {
-      if (litSet.size >= TOTAL) return;
-      let idx;
-      do { idx = (Math.random() * TOTAL) | 0; } while (state[idx] !== 0);
-      state[idx] = 1;
-      litSet.add(idx);
+      if (seismicPool) {
+        if (litSet.size >= seismicPool.size) return;
+        const candidates = [...seismicPool].filter(i => state[i] === 0);
+        if (!candidates.length) return;
+        const idx = candidates[(Math.random() * candidates.length) | 0];
+        state[idx] = 1; litSet.add(idx);
+      } else {
+        if (litSet.size >= TOTAL) return;
+        let idx;
+        do { idx = (Math.random() * TOTAL) | 0; } while (state[idx] !== 0);
+        state[idx] = 1; litSet.add(idx);
+      }
     }
 
     function dotXY(idx) {
@@ -155,7 +364,11 @@
       const [x, y] = dotXY(idx);
       ctx.beginPath();
       ctx.arc(x, y, RADIUS, 0, Math.PI * 2);
-      ctx.fillStyle = state[idx] ? getLedColor() : getOffColor();
+      if (dataSource === 'daynight' && daynightColors) {
+        ctx.fillStyle = daynightColors[idx] || getOffColor();
+      } else {
+        ctx.fillStyle = state[idx] ? getLedColor() : getOffColor();
+      }
       ctx.fill();
     }
 
@@ -163,6 +376,9 @@
       ctx.fillStyle = getBgColor();
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       for (let i = 0; i < TOTAL; i++) drawDot(i);
+      if ((dataSource === 'seismic' || dataSource === 'daynight') && outlineCanvas && showMapOutline) {
+        ctx.drawImage(outlineCanvas, 0, 0);
+      }
     }
 
     const dirty = new Set();
@@ -187,9 +403,18 @@
             const offIdx = arr[(Math.random() * arr.length) | 0];
             dirty.add(offIdx); state[offIdx] = 0; litSet.delete(offIdx);
           }
-          let idx;
-          do { idx = (Math.random() * TOTAL) | 0; } while (state[idx] !== 0);
-          state[idx] = 1; litSet.add(idx); dirty.add(idx);
+          // swap: turn on one from the correct pool
+          if (seismicPool) {
+            const candidates = [...seismicPool].filter(i => state[i] === 0);
+            if (candidates.length) {
+              const idx = candidates[(Math.random() * candidates.length) | 0];
+              state[idx] = 1; litSet.add(idx); dirty.add(idx);
+            }
+          } else {
+            let idx;
+            do { idx = (Math.random() * TOTAL) | 0; } while (state[idx] !== 0);
+            state[idx] = 1; litSet.add(idx); dirty.add(idx);
+          }
         }
       }
       for (const idx of dirty) {
@@ -290,6 +515,7 @@
       isLightMode = !isLightMode;
       modeToggle.classList.toggle('active', isLightMode);
       document.body.classList.toggle('light-mode', isLightMode);
+      buildOutlineCanvas();
       drawAll();
     });
 
@@ -334,6 +560,131 @@
       });
     });
 
+    // ---- Map outline toggle ----
+    const mapToggle    = document.getElementById('map-toggle');
+    const mapToggleRow = document.getElementById('map-toggle-row');
+
+    mapToggle.addEventListener('click', () => {
+      showMapOutline = !showMapOutline;
+      mapToggle.classList.toggle('active', showMapOutline);
+      drawAll();
+    });
+
+    // ---- Data Source ----
+    const sourceStatusEl = document.getElementById('source-status');
+    const sourceBtns     = document.querySelectorAll('.source-btn');
+    let dataSource    = 'random';
+    let dataFetchTimer = null;
+    let micStream     = null;
+    let micAudioCtx   = null;
+    let micAnalyser   = null;
+    let micAnimFrame  = null;
+
+    function setSourceStatus(text) { sourceStatusEl.textContent = text; }
+
+    function stopDataSource() {
+      if (dataFetchTimer)  { clearInterval(dataFetchTimer); dataFetchTimer = null; }
+      if (daynightTimer)   { clearInterval(daynightTimer); daynightTimer = null; }
+      if (micAnimFrame)    { cancelAnimationFrame(micAnimFrame); micAnimFrame = null; }
+      if (micStream)       { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+      if (micAudioCtx)     { micAudioCtx.close(); micAudioCtx = null; }
+      micAnalyser = null;
+      seismicPool = null;
+      daynightColors = null;
+      setSourceStatus('');
+    }
+
+    function applySourceColor(hex) {
+      ledColor = hex;
+      colorSwatches.forEach(s => s.classList.remove('selected'));
+      const m = document.querySelector(`.color-swatch[data-color="${hex}"]`);
+      if (m) m.classList.add('selected');
+      drawAll();
+    }
+
+    function applySourceCoverage(ratio) {
+      TARGET_RATIO = Math.min(0.90, Math.max(0.01, ratio));
+      TARGET_ON    = Math.floor(TOTAL * TARGET_RATIO);
+      const pct    = Math.round(TARGET_RATIO * 100);
+      coverageSlider.value    = Math.min(90, Math.max(1, pct));
+      coverageValEl.textContent = pct + '%';
+    }
+
+    function applySourceSpeed(idx) {
+      idx = Math.max(0, Math.min(4, idx));
+      flickerInterval = SPEED_MAP[idx];
+      speedSlider.value       = idx + 1;
+      speedValEl.textContent  = SPEED_LABELS[idx];
+      startFlicker();
+    }
+
+    // — Seismic via USGS (no key, CORS open) — last 24 hours —
+    async function fetchSeismic() {
+      try {
+        const data   = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson').then(r => r.json());
+        const quakes = data.features.filter(q => (q.properties.mag || 0) >= 1.5);
+        const count  = quakes.length;
+        const maxMag = count > 0 ? Math.max(...quakes.map(q => q.properties.mag || 0)) : 0;
+        const mapped = quakes.map(q => ({
+          lat: q.geometry.coordinates[1],
+          lon: q.geometry.coordinates[0],
+          mag: q.properties.mag || 1.5
+        }));
+        buildSeismicPool(mapped);
+        applySourceSpeed(maxMag < 2 ? 4 : maxMag < 3 ? 3 : maxMag < 5 ? 2 : maxMag < 7 ? 1 : 0);
+        setSourceStatus(`${count} quake${count !== 1 ? 's' : ''} · M${maxMag.toFixed(1)} max (24h)`);
+      } catch { setSourceStatus('unavailable'); }
+    }
+
+    // — Microphone via Web Audio API —
+    async function startMic() {
+      try {
+        micStream   = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        micAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const src   = micAudioCtx.createMediaStreamSource(micStream);
+        micAnalyser = micAudioCtx.createAnalyser();
+        micAnalyser.fftSize = 256;
+        src.connect(micAnalyser);
+        const buf = new Uint8Array(micAnalyser.frequencyBinCount);
+        function tick() {
+          if (dataSource !== 'mic') return;
+          micAnalyser.getByteFrequencyData(buf);
+          const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
+          applySourceCoverage(0.01 + (avg / 255) * 0.89);
+          setSourceStatus(`lvl ${Math.round(avg)}`);
+          micAnimFrame = requestAnimationFrame(tick);
+        }
+        tick();
+      } catch {
+        setSourceStatus('mic denied');
+        dataSource = 'random';
+        sourceBtns.forEach(b => b.classList.toggle('active', b.dataset.source === 'random'));
+      }
+    }
+
+    const DATA_FETCHERS = { seismic: fetchSeismic };
+
+    function activateSource(src) {
+      stopDataSource();
+      dataSource = src;
+      sourceBtns.forEach(b => b.classList.toggle('active', b.dataset.source === src));
+      mapToggleRow.style.display    = (src === 'seismic' || src === 'daynight') ? 'flex' : 'none';
+      daynightTimeRow.style.display = src === 'daynight' ? 'flex' : 'none';
+      if (src === 'random') { drawAll(); return; }
+      if (src === 'mic') { setSourceStatus('listening…'); startMic(); drawAll(); return; }
+      if (src === 'daynight') {
+        tickDayNight();
+        buildDayNightState();
+        daynightTimer = setInterval(tickDayNight, 1000);
+        return;
+      }
+      setSourceStatus('fetching…');
+      DATA_FETCHERS[src]();
+      dataFetchTimer = setInterval(DATA_FETCHERS[src], 60000);
+    }
+
+    sourceBtns.forEach(btn => btn.addEventListener('click', () => activateSource(btn.dataset.source)));
+
     // Reset all controls to their defaults on every load
     densitySlider.value  = 10;
     densityValEl.textContent = '10 /in';
@@ -359,9 +710,18 @@
     brightnessSlider.value = 100;
     brightnessValEl.textContent = '100%';
 
+    stopDataSource();
+    dataSource = 'random';
+    sourceBtns.forEach(b => b.classList.toggle('active', b.dataset.source === 'random'));
+    showMapOutline = true;
+    mapToggle.classList.add('active');
+    mapToggleRow.style.display = 'none';
+    daynightTimeRow.style.display = 'none';
+
     window.addEventListener('resize', resize);
     resize();
     startFlicker();
+    loadWorldMap();
   </script>
 </body>
 </html>
