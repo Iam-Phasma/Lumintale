@@ -34,9 +34,9 @@
     <div class="setting-group">
       <div class="setting-row">
         <span class="setting-label">LED Density</span>
-        <span class="setting-meta" id="density-val">10 /in</span>
+        <span class="setting-meta" id="density-val">8 /in</span>
       </div>
-      <input type="range" id="density-slider" min="5" max="20" value="10" step="1" autocomplete="off">
+      <input type="range" id="density-slider" min="5" max="20" value="8" step="1" autocomplete="off">
     </div>
 
     <div class="divider"></div>
@@ -44,9 +44,9 @@
     <div class="setting-group">
       <div class="setting-row">
         <span class="setting-label">Lights On</span>
-        <span class="setting-meta" id="coverage-val">18%</span>
+        <span class="setting-meta" id="coverage-val">5%</span>
       </div>
-      <input type="range" id="coverage-slider" min="1" max="90" value="18" step="1" autocomplete="off">
+      <input type="range" id="coverage-slider" min="1" max="90" value="5" step="1" autocomplete="off">
     </div>
 
     <div class="divider"></div>
@@ -76,12 +76,12 @@
       <div id="color-grid">
         <button class="color-swatch" data-color="#ff4d4d" style="background:#ff4d4d" aria-label="Red"></button>
         <button class="color-swatch" data-color="#ff8c00" style="background:#ff8c00" aria-label="Orange"></button>
-        <button class="color-swatch selected" data-color="#f5c842" style="background:#f5c842" aria-label="Yellow"></button>
+        <button class="color-swatch" data-color="#f5c842" style="background:#f5c842" aria-label="Yellow"></button>
         <button class="color-swatch" data-color="#4de04d" style="background:#4de04d" aria-label="Green"></button>
         <button class="color-swatch" data-color="#4da6ff" style="background:#4da6ff" aria-label="Blue"></button>
         <button class="color-swatch" data-color="#5c5cff" style="background:#5c5cff" aria-label="Indigo"></button>
         <button class="color-swatch" data-color="#c44dff" style="background:#c44dff" aria-label="Violet"></button>
-        <button class="color-swatch" data-color="#ffffff" style="background:#ffffff" aria-label="White"></button>
+        <button class="color-swatch selected" data-color="#ffffff" style="background:#ffffff" aria-label="White"></button>
       </div>
     </div>
 
@@ -126,6 +126,7 @@
           <option value="wave">Wave</option>
           <option value="rainbow">Rainbow</option>
           <option value="twinkle">Twinkle</option>
+          <option value="ripple">Ripple</option>
         </select>
       </div>
     </div>
@@ -136,9 +137,9 @@
     const RADIUS = 1.5;
     let DPR = 1, CW = 0, CH = 0; // physical pixel ratio and CSS viewport dimensions
     let isLightMode = false;
-    let ledColor = '#f5c842';
+    let ledColor = '#ffffff';
     let brightnessLevel = 1.0;
-    let showMapOutline = true;
+    let showMapOutline = false;
 
     const getBgColor  = () => isLightMode ? '#e0e0e0' : '#1f1f1f';
     const getOffColor = () => isLightMode ? '#c2c2c2' : '#181818';
@@ -174,6 +175,7 @@
     let twinkleTargets     = null;
     let rainbowHues        = null;  // per-LED hue (0–1) for rainbow mode
     let rainbowSpeeds      = null;  // per-LED drift speed
+    let randomRipples      = null;  // Array of random ripple objects for ripple sub-effect
 
     function hslToRgbStr(h, s, l) {
       const a = s * Math.min(l, 1 - l);
@@ -200,6 +202,25 @@
       if (subEffect === 'twinkle') {
         const b = twinkleLevels ? (twinkleLevels[idx] || 0.1) : 1.0;
         return applyBrightness(ledColor, b * lm);
+      }
+      if (subEffect === 'ripple') {
+        if (!randomRipples) return getOffColor();
+        let maxI = 0;
+        const col = idx % COLS, row = (idx / COLS) | 0;
+        const now = performance.now();
+        for (const rp of randomRipples) {
+          const elapsed = now - rp.born;
+          if (elapsed < 0) continue; // not yet born
+          const t      = elapsed / rp.period;
+          const radius = t * rp.maxRadius;
+          const dist   = Math.sqrt((col - rp.col) ** 2 + (row - rp.row) ** 2);
+          const diff   = Math.abs(dist - radius);
+          if (diff < 2.5) {
+            const v = (1 - diff / 2.5) * Math.pow(1 - t, 0.65);
+            if (v > maxI) maxI = v;
+          }
+        }
+        return maxI > 0.03 ? applyBrightness(ledColor, maxI * lm) : getOffColor();
       }
       return getLedColor();
     }
@@ -231,6 +252,24 @@
           twinkleLevels[i] += (twinkleTargets[i] - twinkleLevels[i]) * 0.07;
         }
       }
+      if (subEffect === 'ripple') {
+        if (!randomRipples) randomRipples = [];
+        const now = performance.now();
+        // Respawn completed ripples
+        randomRipples = randomRipples.filter(rp => (now - rp.born) < rp.period * 1.05);
+        let spawnDelay = 0;
+        while (randomRipples.length < 6) {
+          const period = 2400 + Math.random() * 2000;
+          randomRipples.push({
+            col:       (Math.random() * COLS) | 0,
+            row:       (Math.random() * ROWS) | 0,
+            maxRadius: 4 + Math.random() * Math.min(COLS, ROWS) * 0.35,
+            period,
+            born:      now + spawnDelay  // stagger future starts so each begins from center
+          });
+          spawnDelay += 650;
+        }
+      }
       drawAll();
       subEffectAnimFrame = requestAnimationFrame(tickSubEffect);
     }
@@ -240,6 +279,7 @@
       subEffectPhase = 0; subEffectLastTime = 0;
       twinkleLevels = null; twinkleTargets = null;
       rainbowHues = null; rainbowSpeeds = null;
+      randomRipples = null;
       if (subEffect !== 'classic') subEffectAnimFrame = requestAnimationFrame(tickSubEffect);
     }
 
@@ -247,6 +287,7 @@
       if (subEffectAnimFrame) { cancelAnimationFrame(subEffectAnimFrame); subEffectAnimFrame = null; }
       twinkleLevels = null; twinkleTargets = null;
       rainbowHues = null; rainbowSpeeds = null;
+      randomRipples = null;
     }
 
     // ---- Day/Night ----
@@ -467,7 +508,7 @@
     }
 
     let state, litSet, TARGET_ON;
-    let TARGET_RATIO = 0.18;
+    let TARGET_RATIO = 0.05;
 
     function init() {
       state     = new Uint8Array(TOTAL);
@@ -824,6 +865,10 @@
       sourceBtns.forEach(b => b.classList.toggle('active', b.dataset.source === src));
       mapToggleRow.style.display    = (src === 'seismic' || src === 'daynight') ? 'flex' : 'none';
       daynightTimeRow.style.display = src === 'daynight' ? 'flex' : 'none';
+      if (src === 'seismic' || src === 'daynight') {
+        showMapOutline = src === 'seismic';
+        mapToggle.classList.toggle('active', showMapOutline);
+      }
       subEffectGroup.style.display  = src === 'random' ? '' : 'none';
       setGeoSlidersDisabled(src === 'seismic' || src === 'daynight');
       if (src === 'random' || src === 'mic') {
@@ -864,13 +909,13 @@
     });
 
     // Reset all controls to their defaults on every load
-    densitySlider.value  = 10;
-    densityValEl.textContent = '10 /in';
-    SPACING = Math.max(5, Math.round(96 / 10));
+    densitySlider.value  = 8;
+    densityValEl.textContent = '8 /in';
+    SPACING = Math.max(5, Math.round(96 / 8));
 
-    coverageSlider.value = 18;
-    coverageValEl.textContent = '18%';
-    TARGET_RATIO = 0.18;
+    coverageSlider.value = 5;
+    coverageValEl.textContent = '5%';
+    TARGET_RATIO = 0.05;
 
     speedSlider.value = 3;
     speedValEl.textContent = 'Normal';
@@ -880,9 +925,9 @@
     modeToggle.classList.remove('active');
     document.body.classList.remove('light-mode');
 
-    ledColor = '#f5c842';
+    ledColor = '#ffffff';
     colorSwatches.forEach(s => s.classList.remove('selected'));
-    document.querySelector('.color-swatch[data-color="#f5c842"]').classList.add('selected');
+    document.querySelector('.color-swatch[data-color="#ffffff"]').classList.add('selected');
 
     brightnessLevel = 1.0;
     brightnessSlider.value = 100;
@@ -891,8 +936,8 @@
     stopDataSource();
     dataSource = 'random';
     sourceBtns.forEach(b => b.classList.toggle('active', b.dataset.source === 'random'));
-    showMapOutline = true;
-    mapToggle.classList.add('active');
+    showMapOutline = false;
+    mapToggle.classList.remove('active');
     mapToggleRow.style.display = 'none';
     daynightTimeRow.style.display = 'none';
     subEffectGroup.style.display = '';
