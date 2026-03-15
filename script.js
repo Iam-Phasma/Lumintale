@@ -846,6 +846,77 @@ function resetToDefaults() {
 
 document.getElementById('reset-btn').addEventListener('click', resetToDefaults);
 
+// ---- Favicon flicker ----
+(function() {
+  const fc = document.createElement('canvas');
+  fc.width = fc.height = 32;
+  const fctx = fc.getContext('2d');
+  const faviconEl = document.getElementById('favicon');
+  let faviconBrightness = 1.0;
+  let faviconTarget = 1.0;
+  let faviconTimer = 0;
+
+  function squircle(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  function tickFavicon() {
+    faviconTimer++;
+    if (faviconTimer % 20 === 0) {
+      faviconTarget = Math.random() < 0.25 ? 0.08 + Math.random() * 0.25 : 0.8 + Math.random() * 0.2;
+    }
+    faviconBrightness += (faviconTarget - faviconBrightness) * 0.22;
+
+    const color = ledColor || '#ffffff';
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    const f = faviconBrightness;
+    const isOn = f > 0.18;
+
+    fctx.clearRect(0, 0, 32, 32);
+
+    // Squircle background
+    squircle(fctx, 0, 0, 32, 32, 7);
+    fctx.fillStyle = '#2e2e2e';
+    fctx.fill();
+
+    if (isOn) {
+      // Glow
+      const grd = fctx.createRadialGradient(16, 16, 0, 16, 16, 12);
+      grd.addColorStop(0, `rgba(${Math.round(r*f)},${Math.round(g*f)},${Math.round(b*f)},${0.4 * f})`);
+      grd.addColorStop(1, `rgba(${Math.round(r*f)},${Math.round(g*f)},${Math.round(b*f)},0)`);
+      fctx.beginPath();
+      fctx.arc(16, 16, 12, 0, Math.PI * 2);
+      fctx.fillStyle = grd;
+      fctx.fill();
+    }
+
+    // Dot — lit color when on, dark gray when off
+    fctx.beginPath();
+    fctx.arc(16, 16, 5.5, 0, Math.PI * 2);
+    fctx.fillStyle = isOn
+      ? `rgb(${Math.round(r*f)},${Math.round(g*f)},${Math.round(b*f)})`
+      : '#484848';
+    fctx.fill();
+
+    faviconEl.href = fc.toDataURL('image/png');
+    requestAnimationFrame(tickFavicon);
+  }
+
+  requestAnimationFrame(tickFavicon);
+})();
+
 window.addEventListener('resize', resize);
 resetToDefaults();
 loadWorldMap();
