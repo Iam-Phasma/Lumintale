@@ -71,7 +71,7 @@
 
     <div class="divider"></div>
 
-    <div class="setting-group">
+    <div class="setting-group" id="color-group">
       <span class="setting-label">LED Color</span>
       <div id="color-grid">
         <button class="color-swatch" data-color="#ff4d4d" style="background:#ff4d4d" aria-label="Red"></button>
@@ -114,6 +114,21 @@
         <span class="setting-meta" id="daynight-time">--:--:--</span>
       </div>
     </div>
+
+    <div class="divider"></div>
+
+    <div class="setting-group" id="sub-effect-group">
+      <div class="setting-row">
+        <span class="setting-label">Effect</span>
+        <select id="sub-effect-select" class="setting-select">
+          <option value="classic">Classic</option>
+          <option value="pulse">Pulse</option>
+          <option value="wave">Wave</option>
+          <option value="rainbow">Rainbow</option>
+          <option value="twinkle">Twinkle</option>
+        </select>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -143,9 +158,96 @@
     const ctx    = canvas.getContext('2d');
 
     // ---- World map (TopoJSON) ----
-    let worldGeo     = null;   // GeoJSON FeatureCollection of land
-    let outlineCanvas = null;  // pre-rendered map outline (redrawn on resize)
-    let seismicPool  = null;   // Set of LED indices near today's earthquakes
+    let worldGeo        = null;  // GeoJSON FeatureCollection of land
+    let outlineCanvas   = null;  // pre-rendered map outline (redrawn on resize)
+    let seismicPool     = null;  // unused — kept for legacy flicker guard
+    let seismicRipples  = null;  // Array of active ripple objects
+    let rippleColors    = null;  // per-LED color string for current ripple frame
+    let rippleAnimFrame = null;
+
+    // ---- Sub-effects (random mode) ----
+    let subEffect          = 'classic';
+    let subEffectAnimFrame = null;
+    let subEffectPhase     = 0;
+    let subEffectLastTime  = 0;
+    let twinkleLevels      = null;
+    let twinkleTargets     = null;
+    let rainbowHues        = null;  // per-LED hue (0–1) for rainbow mode
+    let rainbowSpeeds      = null;  // per-LED drift speed
+
+    function hslToRgbStr(h, s, l) {
+      const a = s * Math.min(l, 1 - l);
+      const f = n => { const k = (n + h * 12) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+      const bl = brightnessLevel;
+      return `rgb(${Math.round(f(0)*255*bl)},${Math.round(f(8)*255*bl)},${Math.round(f(4)*255*bl)})`;
+    }
+
+    function getSubEffectColor(idx) {
+      const lm = isLightMode ? 0.55 : 1.0;
+      if (subEffect === 'pulse') {
+        const b = 0.15 + 0.85 * (Math.sin(subEffectPhase) * 0.5 + 0.5);
+        return applyBrightness(ledColor, b * lm);
+      }
+      if (subEffect === 'wave') {
+        const col = idx % COLS;
+        const b = 0.1 + 0.9 * (Math.sin(col / COLS * Math.PI * 4 - subEffectPhase) * 0.5 + 0.5);
+        return applyBrightness(ledColor, b * lm);
+      }
+      if (subEffect === 'rainbow') {
+        const hue = rainbowHues ? rainbowHues[idx] : Math.random();
+        return hslToRgbStr(hue, 1, 0.55 * lm);
+      }
+      if (subEffect === 'twinkle') {
+        const b = twinkleLevels ? (twinkleLevels[idx] || 0.1) : 1.0;
+        return applyBrightness(ledColor, b * lm);
+      }
+      return getLedColor();
+    }
+
+    function tickSubEffect(ts) {
+      if (dataSource !== 'random') return;
+      if (subEffect === 'classic') return;
+      const dt = subEffectLastTime ? Math.min(ts - subEffectLastTime, 50) : 16;
+      subEffectLastTime = ts;
+      if (subEffect === 'pulse')   subEffectPhase += dt * 0.0012;
+      if (subEffect === 'wave')    subEffectPhase += dt * 0.0025;
+      if (subEffect === 'rainbow') {
+        if (!rainbowHues || rainbowHues.length !== TOTAL) {
+          rainbowHues  = new Float32Array(TOTAL).map(() => Math.random());
+          rainbowSpeeds = new Float32Array(TOTAL).map(() => (Math.random() * 0.6 + 0.2) * (Math.random() < 0.5 ? 1 : -1));
+        }
+        const step = dt * 0.00008;
+        for (let i = 0; i < TOTAL; i++) {
+          rainbowHues[i] = (rainbowHues[i] + rainbowSpeeds[i] * step + 1) % 1;
+        }
+      }
+      if (subEffect === 'twinkle') {
+        if (!twinkleLevels || twinkleLevels.length !== TOTAL) {
+          twinkleLevels  = new Float32Array(TOTAL).fill(1);
+          twinkleTargets = new Float32Array(TOTAL).fill(1);
+        }
+        for (let i = 0; i < TOTAL; i++) {
+          if (Math.random() < 0.015) twinkleTargets[i] = 0.05 + Math.random() * 0.95;
+          twinkleLevels[i] += (twinkleTargets[i] - twinkleLevels[i]) * 0.07;
+        }
+      }
+      drawAll();
+      subEffectAnimFrame = requestAnimationFrame(tickSubEffect);
+    }
+
+    function startSubEffect() {
+      if (subEffectAnimFrame) { cancelAnimationFrame(subEffectAnimFrame); subEffectAnimFrame = null; }
+      subEffectPhase = 0; subEffectLastTime = 0;
+      twinkleLevels = null; twinkleTargets = null;
+      rainbowHues = null; rainbowSpeeds = null;
+      if (subEffect !== 'classic') subEffectAnimFrame = requestAnimationFrame(tickSubEffect);
+    }
+
+    function stopSubEffect() {
+      if (subEffectAnimFrame) { cancelAnimationFrame(subEffectAnimFrame); subEffectAnimFrame = null; }
+      twinkleLevels = null; twinkleTargets = null;
+      rainbowHues = null; rainbowSpeeds = null;
+    }
 
     // ---- Day/Night ----
     let landPixelData  = null; // Uint8ClampedArray of filled-land canvas (for hit testing)
@@ -290,31 +392,59 @@
       return row * COLS + col;
     }
 
-    // Build seismicPool from a list of {lat, lon, mag} quake objects
-    function buildSeismicPool(quakes) {
-      seismicPool = new Set();
-      quakes.forEach(({ lat, lon, mag }) => {
-        const radius = Math.max(1, Math.round(mag * 0.5));
-        const [cx, cy] = geoProject(lon, lat);
-        for (let dr = -radius; dr <= radius; dr++) {
-          for (let dc = -radius; dc <= radius; dc++) {
-            if (dr * dr + dc * dc > radius * radius) continue;
-            const col = Math.round(cx / SPACING) + dc;
-            const row = Math.round(cy / SPACING) + dr;
-            if (col < 0 || col >= COLS || row < 0 || row >= ROWS) continue;
-            seismicPool.add(row * COLS + col);
+    // Build ripple objects from a list of {lat, lon, mag} quake objects
+    function buildSeismicRipples(quakes) {
+      const top = quakes.slice().sort((a, b) => b.mag - a.mag).slice(0, 60);
+      seismicRipples = top.map(({ lat, lon, mag }) => {
+        const [x, y] = geoProject(lon, lat);
+        const col = Math.min(COLS - 1, Math.max(0, (x / SPACING - 0.5) | 0));
+        const row = Math.min(ROWS - 1, Math.max(0, (y / SPACING - 0.5) | 0));
+        const maxRadius = Math.max(3, mag * 2.2);
+        const period    = 2800 + mag * 360; // larger quakes pulse slower
+        const offset    = Math.random() * period;
+        return { col, row, maxRadius, period, offset };
+      });
+      state.fill(0); litSet.clear();
+      if (!rippleAnimFrame) tickRipple();
+    }
+
+    function tickRipple() {
+      if (dataSource !== 'seismic' || !seismicRipples) return;
+      const now = performance.now();
+      const intensity = new Float32Array(TOTAL);
+
+      for (const rp of seismicRipples) {
+        const t         = ((now + rp.offset) % rp.period) / rp.period; // 0→1 within cycle
+        const radius    = t * rp.maxRadius;
+        const bandwidth = 1.5;
+        const fade      = Math.pow(1 - t, 0.65); // ring fades as it expands
+
+        const rMin = Math.max(0, Math.ceil(rp.row  - rp.maxRadius - 2));
+        const rMax = Math.min(ROWS - 1, Math.floor(rp.row  + rp.maxRadius + 2));
+        const cMin = Math.max(0, Math.ceil(rp.col  - rp.maxRadius - 2));
+        const cMax = Math.min(COLS - 1, Math.floor(rp.col  + rp.maxRadius + 2));
+
+        for (let r = rMin; r <= rMax; r++) {
+          for (let c = cMin; c <= cMax; c++) {
+            const dist = Math.sqrt((c - rp.col) ** 2 + (r - rp.row) ** 2);
+            const diff = Math.abs(dist - radius);
+            if (diff < bandwidth) {
+              const v = (1 - diff / bandwidth) * fade;
+              const idx = r * COLS + c;
+              if (v > intensity[idx]) intensity[idx] = v;
+            }
           }
         }
-      });
-      // Reset lit state to seismic pool, keeping ~70% lit
-      litSet.forEach(i => { state[i] = 0; });
-      litSet.clear();
-      TARGET_ON = Math.round(seismicPool.size * 0.7);
-      for (const i of seismicPool) {
-        if (litSet.size >= TARGET_ON) break;
-        state[i] = 1; litSet.add(i);
+      }
+
+      rippleColors = new Array(TOTAL).fill(null);
+      for (let i = 0; i < TOTAL; i++) {
+        if (intensity[i] > 0.03) {
+          rippleColors[i] = applyBrightness(ledColor, intensity[i] * (isLightMode ? 0.55 : 1.0));
+        }
       }
       drawAll();
+      rippleAnimFrame = requestAnimationFrame(tickRipple);
     }
 
     let COLS, ROWS, TOTAL;
@@ -374,6 +504,10 @@
       ctx.arc(x, y, RADIUS, 0, Math.PI * 2);
       if (dataSource === 'daynight' && daynightColors) {
         ctx.fillStyle = daynightColors[idx] || getOffColor();
+      } else if (dataSource === 'seismic' && rippleColors) {
+        ctx.fillStyle = rippleColors[idx] || getOffColor();
+      } else if (state[idx] && subEffect !== 'classic') {
+        ctx.fillStyle = getSubEffectColor(idx);
       } else {
         ctx.fillStyle = state[idx] ? getLedColor() : getOffColor();
       }
@@ -593,12 +727,16 @@
     function stopDataSource() {
       if (dataFetchTimer)  { clearInterval(dataFetchTimer); dataFetchTimer = null; }
       if (daynightTimer)   { clearInterval(daynightTimer); daynightTimer = null; }
+      if (rippleAnimFrame) { cancelAnimationFrame(rippleAnimFrame); rippleAnimFrame = null; }
       if (micAnimFrame)    { cancelAnimationFrame(micAnimFrame); micAnimFrame = null; }
       if (micStream)       { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
       if (micAudioCtx)     { micAudioCtx.close(); micAudioCtx = null; }
-      micAnalyser = null;
-      seismicPool = null;
+      micAnalyser    = null;
+      seismicPool    = null;
+      seismicRipples = null;
+      rippleColors   = null;
       daynightColors = null;
+      stopSubEffect();
       setSourceStatus('');
     }
 
@@ -638,8 +776,7 @@
           lon: q.geometry.coordinates[0],
           mag: q.properties.mag || 1.5
         }));
-        buildSeismicPool(mapped);
-        applySourceSpeed(maxMag < 2 ? 4 : maxMag < 3 ? 3 : maxMag < 5 ? 2 : maxMag < 7 ? 1 : 0);
+        buildSeismicRipples(mapped);
         setSourceStatus(`${count} quake${count !== 1 ? 's' : ''} · M${maxMag.toFixed(1)} max (24h)`);
       } catch { setSourceStatus('unavailable'); }
     }
@@ -687,6 +824,7 @@
       sourceBtns.forEach(b => b.classList.toggle('active', b.dataset.source === src));
       mapToggleRow.style.display    = (src === 'seismic' || src === 'daynight') ? 'flex' : 'none';
       daynightTimeRow.style.display = src === 'daynight' ? 'flex' : 'none';
+      subEffectGroup.style.display  = src === 'random' ? '' : 'none';
       setGeoSlidersDisabled(src === 'seismic' || src === 'daynight');
       if (src === 'random' || src === 'mic') {
         // clear geo-shaped state so flicker redistributes from scratch
@@ -694,7 +832,7 @@
         litSet.clear();
         TARGET_ON = Math.floor(TOTAL * TARGET_RATIO);
       }
-      if (src === 'random') { drawAll(); return; }
+      if (src === 'random') { startSubEffect(); drawAll(); return; }
       if (src === 'mic') { setSourceStatus('listening…'); startMic(); drawAll(); return; }
       if (src === 'daynight') {
         tickDayNight();
@@ -708,6 +846,22 @@
     }
 
     sourceBtns.forEach(btn => btn.addEventListener('click', () => activateSource(btn.dataset.source)));
+
+    const subEffectGroup  = document.getElementById('sub-effect-group');
+    const subEffectSelect = document.getElementById('sub-effect-select');
+    const colorGroup      = document.getElementById('color-group');
+
+    function setColorGroupDisabled(disabled) {
+      colorGroup.classList.toggle('disabled-row', disabled);
+      colorGroup.querySelectorAll('.color-swatch').forEach(s => s.disabled = disabled);
+    }
+
+    subEffectSelect.addEventListener('change', () => {
+      subEffect = subEffectSelect.value;
+      setColorGroupDisabled(subEffect === 'rainbow');
+      startSubEffect();
+      if (subEffect === 'classic') drawAll();
+    });
 
     // Reset all controls to their defaults on every load
     densitySlider.value  = 10;
@@ -741,7 +895,11 @@
     mapToggle.classList.add('active');
     mapToggleRow.style.display = 'none';
     daynightTimeRow.style.display = 'none';
+    subEffectGroup.style.display = '';
     setGeoSlidersDisabled(false);
+    subEffect = 'classic';
+    subEffectSelect.value = 'classic';
+    setColorGroupDisabled(false);
 
     window.addEventListener('resize', resize);
     resize();

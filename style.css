@@ -141,6 +141,46 @@ canvas { display: block; }
   font-variant-numeric: tabular-nums;
 }
 
+.setting-select {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12.5px;
+  padding: 4px 26px 4px 10px;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='rgba(255,255,255,0.45)' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.setting-select:hover {
+  background-color: rgba(255, 255, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.setting-select option {
+  background: #2a2a2a;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+body.light-mode .setting-select {
+  background-color: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.75);
+  border-color: rgba(0, 0, 0, 0.15);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='rgba(0,0,0,0.4)' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+body.light-mode .setting-select option {
+  background: #e8e8e8;
+  color: rgba(0, 0, 0, 0.75);
+}
+
 .divider {
   height: 1px;
   background: rgba(255, 255, 255, 0.06);
