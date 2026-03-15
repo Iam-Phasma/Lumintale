@@ -9,6 +9,17 @@
 <body>
   <canvas id="c"></canvas>
 
+  <button id="fullscreen-btn" aria-label="Toggle fullscreen">
+    <svg id="fs-expand" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+      <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+    </svg>
+    <svg id="fs-collapse" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+      <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+      <line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>
+    </svg>
+  </button>
+
   <button id="settings-btn" aria-label="Settings">
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="12" r="3"/>
@@ -24,7 +35,7 @@
         <span class="setting-label">LED Density</span>
         <span class="setting-meta" id="density-val">10 /in</span>
       </div>
-      <input type="range" id="density-slider" min="5" max="20" value="10" step="1">
+      <input type="range" id="density-slider" min="5" max="20" value="10" step="1" autocomplete="off">
     </div>
 
     <div class="divider"></div>
@@ -34,7 +45,17 @@
         <span class="setting-label">Lights On</span>
         <span class="setting-meta" id="coverage-val">18%</span>
       </div>
-      <input type="range" id="coverage-slider" min="10" max="90" value="18" step="1">
+      <input type="range" id="coverage-slider" min="1" max="90" value="18" step="1" autocomplete="off">
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="setting-group">
+      <div class="setting-row">
+        <span class="setting-label">Flicker Speed</span>
+        <span class="setting-meta" id="speed-val">Normal</span>
+      </div>
+      <input type="range" id="speed-slider" min="1" max="5" value="3" step="1" autocomplete="off">
     </div>
 
     <div class="divider"></div>
@@ -110,14 +131,14 @@
     const dirty = new Set();
 
     function flicker() {
-      const n = litSet.size;
-      const changes = 4;
+      const delta = Math.abs(litSet.size - TARGET_ON);
+      const changes = Math.min(Math.max(4, delta >> 3), 300);
       for (let c = 0; c < changes; c++) {
-        if (n < TARGET_ON) {
-          const prev = litSet.size === 0 ? -1 : [...litSet][0];
+        if (litSet.size < TARGET_ON) {
+          const prev = litSet.size;
           turnOnRandom();
-          if (litSet.size > (prev === -1 ? 0 : 1)) dirty.add([...litSet][litSet.size - 1]);
-        } else if (n > TARGET_ON || Math.random() < 0.5) {
+          if (litSet.size > prev) dirty.add([...litSet][litSet.size - 1]);
+        } else if (litSet.size > TARGET_ON || Math.random() < 0.5) {
           if (litSet.size > 0) {
             const arr = [...litSet];
             const idx = arr[(Math.random() * arr.length) | 0];
@@ -154,10 +175,40 @@
     const modeToggle     = document.getElementById('mode-toggle');
     let panelOpen = false;
 
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
+    const fsExpand   = document.getElementById('fs-expand');
+    const fsCollapse = document.getElementById('fs-collapse');
+
+    function isFullscreen() {
+      return !!(document.fullscreenElement || document.webkitFullscreenElement);
+    }
+
+    function updateFsIcon() {
+      const fs = isFullscreen();
+      fsExpand.style.display   = fs ? 'none'  : '';
+      fsCollapse.style.display = fs ? ''      : 'none';
+    }
+
+    fullscreenBtn.addEventListener('click', () => {
+      if (!isFullscreen()) {
+        const el = document.documentElement;
+        (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+      } else {
+        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      }
+    });
+
+    document.addEventListener('fullscreenchange', updateFsIcon);
+    document.addEventListener('webkitfullscreenchange', updateFsIcon);
+
     document.addEventListener('mousemove', (e) => {
-      const r = settingsBtn.getBoundingClientRect();
-      const dist = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
-      settingsBtn.classList.toggle('near', dist < 160);
+      const rs = settingsBtn.getBoundingClientRect();
+      const rf = fullscreenBtn.getBoundingClientRect();
+      const distS = Math.hypot(e.clientX - (rs.left + rs.width / 2), e.clientY - (rs.top + rs.height / 2));
+      const distF = Math.hypot(e.clientX - (rf.left + rf.width / 2), e.clientY - (rf.top + rf.height / 2));
+      const near = distS < 160 || distF < 160;
+      settingsBtn.classList.toggle('near', near);
+      fullscreenBtn.classList.toggle('near', near);
     });
 
     settingsBtn.addEventListener('click', (e) => {
@@ -205,9 +256,46 @@
       drawAll();
     });
 
+    const speedSlider = document.getElementById('speed-slider');
+    const speedValEl  = document.getElementById('speed-val');
+
+    const SPEED_MAP    = [20, 50, 80, 160, 320];
+    const SPEED_LABELS = ['Fast', 'Faster', 'Normal', 'Slower', 'Slow'];
+    let flickerInterval = SPEED_MAP[2];
+    let flickerTimer = null;
+
+    function startFlicker() {
+      if (flickerTimer) clearInterval(flickerTimer);
+      flickerTimer = setInterval(flicker, flickerInterval);
+    }
+
+    speedSlider.addEventListener('input', () => {
+      const idx = parseInt(speedSlider.value) - 1;
+      flickerInterval = SPEED_MAP[idx];
+      speedValEl.textContent = SPEED_LABELS[idx];
+      startFlicker();
+    });
+
+    // Reset all controls to their defaults on every load
+    densitySlider.value  = 10;
+    densityValEl.textContent = '10 /in';
+    SPACING = Math.max(5, Math.round(96 / 10));
+
+    coverageSlider.value = 18;
+    coverageValEl.textContent = '18%';
+    TARGET_RATIO = 0.18;
+
+    speedSlider.value = 3;
+    speedValEl.textContent = 'Normal';
+    flickerInterval = SPEED_MAP[2];
+
+    isLightMode = false;
+    modeToggle.classList.remove('active');
+    document.body.classList.remove('light-mode');
+
     window.addEventListener('resize', resize);
     resize();
-    setInterval(flicker, 80);
+    startFlicker();
   </script>
 </body>
 </html>

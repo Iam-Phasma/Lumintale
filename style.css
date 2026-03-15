@@ -2,6 +2,37 @@
 body { background: #1f1f1f; overflow: hidden; }
 canvas { display: block; }
 
+/* ---- Fullscreen button ---- */
+#fullscreen-btn {
+  position: fixed;
+  top: 16px;
+  right: 64px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: none;
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, background 0.2s ease, color 0.2s ease;
+  z-index: 100;
+}
+#fullscreen-btn.near {
+  opacity: 1;
+  pointer-events: auto;
+}
+#fullscreen-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.9);
+}
+
 /* ---- Settings button ---- */
 #settings-btn {
   position: fixed;
@@ -165,6 +196,14 @@ input[type=range]::-webkit-slider-thumb:hover {
 }
 
 /* ---- Light mode overrides ---- */
+body.light-mode #fullscreen-btn {
+  background: rgba(0, 0, 0, 0.07);
+  color: rgba(0, 0, 0, 0.45);
+}
+body.light-mode #fullscreen-btn:hover {
+  background: rgba(0, 0, 0, 0.13);
+  color: rgba(0, 0, 0, 0.85);
+}
 body.light-mode #settings-btn {
   background: rgba(0, 0, 0, 0.07);
   color: rgba(0, 0, 0, 0.45);
