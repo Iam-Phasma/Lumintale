@@ -28,6 +28,25 @@
     </svg>
   </button>
 
+  <button id="info-btn" aria-label="About">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="8" x2="12" y2="8.5"/>
+      <line x1="12" y1="12" x2="12" y2="16"/>
+    </svg>
+  </button>
+
+  <div id="info-modal">
+    <div id="info-modal-content">
+      <p class="info-title">Lumintale</p>
+      <p class="info-version">v1.0 &mdash; March 2026</p>
+      <p class="info-desc">An ambient LED grid visualizer with real-world data sources &mdash; seismic activity, solar day/night, microphone, and animated effects.</p>
+      <div class="info-divider"></div>
+      <p class="info-label">Repository</p>
+      <p class="info-value">Iam-Phasma / Lumintale</p>
+    </div>
+  </div>
+
   <div id="settings-panel">
     <p class="panel-title">Settings</p>
 
@@ -102,7 +121,7 @@
       <div id="source-grid">
         <button class="source-btn active" data-source="random">Random</button>
         <button class="source-btn" data-source="seismic">Seismic</button>
-        <button class="source-btn" data-source="daynight">World</button>
+        <button class="source-btn" data-source="daynight">Solar</button>
         <button class="source-btn" data-source="mic">Sound</button>
       </div>
       <div class="setting-row" id="map-toggle-row" style="display:none">
@@ -612,6 +631,8 @@
 
     // ---- Settings ----
     const settingsBtn   = document.getElementById('settings-btn');
+    const infoBtn       = document.getElementById('info-btn');
+    const infoModal     = document.getElementById('info-modal');
     const settingsPanel = document.getElementById('settings-panel');
     const densitySlider  = document.getElementById('density-slider');
     const densityValEl   = document.getElementById('density-val');
@@ -649,11 +670,15 @@
     document.addEventListener('mousemove', (e) => {
       const rs = settingsBtn.getBoundingClientRect();
       const rf = fullscreenBtn.getBoundingClientRect();
+      const ri = infoBtn.getBoundingClientRect();
       const distS = Math.hypot(e.clientX - (rs.left + rs.width / 2), e.clientY - (rs.top + rs.height / 2));
       const distF = Math.hypot(e.clientX - (rf.left + rf.width / 2), e.clientY - (rf.top + rf.height / 2));
-      const near = distS < 160 || distF < 160;
-      settingsBtn.classList.toggle('near', near);
-      fullscreenBtn.classList.toggle('near', near);
+      const distI = Math.hypot(e.clientX - (ri.left + ri.width / 2), e.clientY - (ri.top + ri.height / 2));
+      const nearTop = distS < 160 || distF < 160;
+      const nearInfo = distI < 160;
+      settingsBtn.classList.toggle('near', nearTop);
+      fullscreenBtn.classList.toggle('near', nearTop);
+      infoBtn.classList.toggle('near', nearInfo);
     });
 
     settingsBtn.addEventListener('click', (e) => {
@@ -676,8 +701,31 @@
       }, { once: true });
     }
 
+    let infoOpen = false;
+
+    function openInfoModal() {
+      infoOpen = true;
+      infoModal.classList.remove('closing');
+      infoModal.classList.add('open');
+    }
+
+    function closeInfoModal() {
+      if (!infoOpen) return;
+      infoOpen = false;
+      infoModal.classList.add('closing');
+      infoModal.addEventListener('animationend', () => {
+        infoModal.classList.remove('open', 'closing');
+      }, { once: true });
+    }
+
     document.addEventListener('click', (e) => {
       if (panelOpen && !settingsPanel.contains(e.target) && e.target !== settingsBtn) closePanel();
+      if (infoOpen && !infoModal.contains(e.target) && e.target !== infoBtn) closeInfoModal();
+    });
+
+    infoBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      infoOpen ? closeInfoModal() : openInfoModal();
     });
 
     densitySlider.addEventListener('input', () => {
