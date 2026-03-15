@@ -81,6 +81,7 @@
         <button class="color-swatch" data-color="#4da6ff" style="background:#4da6ff" aria-label="Blue"></button>
         <button class="color-swatch" data-color="#5c5cff" style="background:#5c5cff" aria-label="Indigo"></button>
         <button class="color-swatch" data-color="#c44dff" style="background:#c44dff" aria-label="Violet"></button>
+        <button class="color-swatch" data-color="#ffffff" style="background:#ffffff" aria-label="White"></button>
       </div>
     </div>
 
@@ -118,6 +119,7 @@
   <script>
     let SPACING = 10;
     const RADIUS = 1.5;
+    let DPR = 1, CW = 0, CH = 0; // physical pixel ratio and CSS viewport dimensions
     let isLightMode = false;
     let ledColor = '#f5c842';
     let brightnessLevel = 1.0;
@@ -157,7 +159,7 @@
     function buildLandPixelData() {
       if (!worldGeo) return;
       const lc = document.createElement('canvas');
-      lc.width = canvas.width; lc.height = canvas.height;
+      lc.width = CW; lc.height = CH;
       landCanvasW = lc.width;  landCanvasH = lc.height;
       const lctx = lc.getContext('2d');
       lctx.fillStyle = '#000';
@@ -231,8 +233,8 @@
 
     function geoProject(lon, lat) {
       return [
-        ((lon + 180) / 360) * canvas.width,
-        ((90  - lat) / 180) * canvas.height
+        ((lon + 180) / 360) * CW,
+        ((90  - lat) / 180) * CH
       ];
     }
 
@@ -261,8 +263,8 @@
     function buildOutlineCanvas() {
       if (!worldGeo) return;
       outlineCanvas = document.createElement('canvas');
-      outlineCanvas.width  = canvas.width;
-      outlineCanvas.height = canvas.height;
+      outlineCanvas.width  = CW;
+      outlineCanvas.height = CH;
       const oc = outlineCanvas.getContext('2d');
       oc.clearRect(0, 0, outlineCanvas.width, outlineCanvas.height);
       oc.strokeStyle = isLightMode ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.22)';
@@ -318,10 +320,16 @@
     let COLS, ROWS, TOTAL;
 
     function resize() {
-      canvas.width  = window.innerWidth;
-      canvas.height = window.innerHeight;
-      COLS  = Math.floor(canvas.width  / SPACING);
-      ROWS  = Math.floor(canvas.height / SPACING);
+      DPR = window.devicePixelRatio || 1;
+      CW  = window.innerWidth;
+      CH  = window.innerHeight;
+      canvas.width  = CW * DPR;
+      canvas.height = CH * DPR;
+      canvas.style.width  = CW + 'px';
+      canvas.style.height = CH + 'px';
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      COLS  = Math.floor(CW / SPACING);
+      ROWS  = Math.floor(CH / SPACING);
       TOTAL = COLS * ROWS;
       buildOutlineCanvas();
       buildLandPixelData();
@@ -374,7 +382,7 @@
 
     function drawAll() {
       ctx.fillStyle = getBgColor();
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, CW, CH);
       for (let i = 0; i < TOTAL; i++) drawDot(i);
       if ((dataSource === 'seismic' || dataSource === 'daynight') && outlineCanvas && showMapOutline) {
         ctx.drawImage(outlineCanvas, 0, 0);
@@ -421,7 +429,7 @@
         const [x, y] = dotXY(idx);
         const r = RADIUS + 1;
         ctx.fillStyle = getBgColor();
-        ctx.fillRect(x - r, y - r, r * 2, r * 2);
+        ctx.fillRect(x - r, y - r, r * 2, r * 2); // CSS coords — correct after setTransform
         drawDot(idx);
       }
       dirty.clear();
@@ -664,12 +672,28 @@
 
     const DATA_FETCHERS = { seismic: fetchSeismic };
 
+    function setGeoSlidersDisabled(disabled) {
+      densitySlider.disabled  = disabled;
+      coverageSlider.disabled = disabled;
+      speedSlider.disabled    = disabled;
+      densitySlider.closest('.setting-group').classList.toggle('disabled-row', disabled);
+      coverageSlider.closest('.setting-group').classList.toggle('disabled-row', disabled);
+      speedSlider.closest('.setting-group').classList.toggle('disabled-row', disabled);
+    }
+
     function activateSource(src) {
       stopDataSource();
       dataSource = src;
       sourceBtns.forEach(b => b.classList.toggle('active', b.dataset.source === src));
       mapToggleRow.style.display    = (src === 'seismic' || src === 'daynight') ? 'flex' : 'none';
       daynightTimeRow.style.display = src === 'daynight' ? 'flex' : 'none';
+      setGeoSlidersDisabled(src === 'seismic' || src === 'daynight');
+      if (src === 'random' || src === 'mic') {
+        // clear geo-shaped state so flicker redistributes from scratch
+        state.fill(0);
+        litSet.clear();
+        TARGET_ON = Math.floor(TOTAL * TARGET_RATIO);
+      }
       if (src === 'random') { drawAll(); return; }
       if (src === 'mic') { setSourceStatus('listening…'); startMic(); drawAll(); return; }
       if (src === 'daynight') {
@@ -717,6 +741,7 @@
     mapToggle.classList.add('active');
     mapToggleRow.style.display = 'none';
     daynightTimeRow.style.display = 'none';
+    setGeoSlidersDisabled(false);
 
     window.addEventListener('resize', resize);
     resize();
