@@ -66,6 +66,7 @@
       <p class="info-value"><a class="info-link" href="https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php" target="_blank" rel="noopener">USGS Earthquake Hazards</a> &mdash; Seismic</p>
       <p class="info-value"><a class="info-link" href="https://cdn.jsdelivr.net/npm/world-atlas@2" target="_blank" rel="noopener">Natural Earth / world-atlas</a> &mdash; Map</p>
       <p class="info-value"><a class="info-link" href="https://en.wikipedia.org/wiki/Solar_zenith_angle" target="_blank" rel="noopener">Solar elevation formula</a> &mdash; Solar</p>
+      <p class="info-value"><a class="info-link" href="https://wheretheiss.at/" target="_blank" rel="noopener">Where the ISS at?</a> &mdash; ISS</p>
     </div>
   </div>
 
@@ -157,6 +158,7 @@
           <div id="submenu-world" class="source-submenu">
             <button class="source-sub-btn" data-source="seismic">Seismic</button>
             <button class="source-sub-btn" data-source="daynight">Solar</button>
+            <button class="source-sub-btn" data-source="iss">ISS</button>
           </div>
         </div>
         <div class="source-cat-wrap">
@@ -182,6 +184,10 @@
         <span class="setting-label" style="font-size:12.5px;opacity:0.7">UTC Time</span>
         <span class="setting-meta" id="daynight-time">--:--:--</span>
       </div>
+      <div class="setting-row" id="iss-location-row" style="display:none">
+        <span class="setting-label" style="font-size:12.5px;opacity:0.7">ISS Location</span>
+        <span class="setting-meta" id="iss-latlon">--</span>
+      </div>
     </div>
 
     <div class="divider"></div>
@@ -191,5 +197,9 @@
 
   <div id="seismic-info-overlay"></div>
   <script src="script.js"></script>
+  <script src="submenus/matrix.js"></script>
+  <script src="submenus/world.js"></script>
+  <script src="submenus/others.js"></script>
+  <script src="submenus/submenus.js"></script>
 </body>
 </html>

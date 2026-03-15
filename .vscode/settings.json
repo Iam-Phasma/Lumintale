@@ -1,0 +1,17 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd /Users/ricsonjaymadonza/Documents/Code_Projects/Lumintale && python3 - << 'PYEOF'\nimport os\n\nwith open\\('script\\.js', 'r'\\) as f:\n    lines = f\\.readlines\\(\\)\n\n# Verify key line numbers \\(1-indexed from grep\\):\n# 34:  // ---- World map \\(TopoJSON\\) ----\n# 51:  // ---- Sub-effects \\(random mode\\) ----\n# 181: // ---- Recent Seismic helpers ----\n# 636: let COLS, ROWS, TOTAL;\n# 1016: let micStream\n# 1078: // — Seismic via USGS\n# 1114: // — Microphone via Web Audio API —\n# 1139: const DATA_FETCHERS\n# 1377: resetToDefaults\\(\\);\n\n# Convert to 0-indexed slices:\n# matrix\\.js  → lines 51-180  → \\[50:180\\]\n# world\\.js   → lines 34-50 \\+ 181-635 \\+ 1078-1113 \\+ 1139  → \\[33:50\\]\\+\\[180:635\\]\\+\\[1077:1113\\]\\+\\[1138:1139\\]\n# others\\.js  → lines 1016-1019 \\+ 1114-1138  → \\[1015:1019\\]\\+\\[1113:1138\\]\n# script\\.js  → lines 1-33 \\+ 636-1015 \\+ 1020-1077 \\+ 1140-1376  → \\[0:33\\]\\+\\[635:1015\\]\\+\\[1019:1077\\]\\+\\[1139:1376\\]\n\nmatrix_lines = lines\\[50:180\\]\n\nworld_vars  = lines\\[33:50\\]    # world map \\+ seismic/recent vars\nworld_funcs = lines\\[180:635\\]  # recent seismic helpers → tickRipple\nfetch_seismic = lines\\[1077:1113\\]\ndata_fetchers = lines\\[1138:1139\\]\n\nmic_vars  = lines\\[1015:1019\\]\nstart_mic = lines\\[1113:1138\\]\n\nnew_script = lines\\[0:33\\] \\+ lines\\[635:1015\\] \\+ lines\\[1019:1077\\] \\+ lines\\[1139:1376\\]\n\n# Build world\\.js content and inject issVelocity declaration\nworld_content = ''\\.join\\(world_vars \\+ world_funcs \\+ fetch_seismic \\+ data_fetchers\\)\nworld_content = world_content\\.replace\\(\n    'const ISS_FUTURE_STEPS = 180; // 180 × 30s = 90 min ≈ full orbit',\n    'const ISS_FUTURE_STEPS = 180; // 180 × 30s = 90 min ≈ full orbit\\\\nlet issVelocity       = 7\\.66; // km/s — updated on each ISS fetch'\n\\)\n\nos\\.makedirs\\('submenus', exist_ok=True\\)\n\n# Write submenus/matrix\\.js\nwith open\\('submenus/matrix\\.js', 'w'\\) as f:\n    f\\.write\\('// ---- Matrix sub-effects \\(random mode\\) ----\\\\n\\\\n'\\)\n    f\\.write\\(''\\.join\\(matrix_lines\\)\\)\n\n# Write submenus/world\\.js\nwith open\\('submenus/world\\.js', 'w'\\) as f:\n    f\\.write\\('// ---- World data sources \\(Seismic, Solar, ISS\\) ----\\\\n\\\\n'\\)\n    f\\.write\\(world_content\\)\n\n# Write submenus/others\\.js\nwith open\\('submenus/others\\.js', 'w'\\) as f:\n    f\\.write\\('// ---- Others — Microphone ----\\\\n\\\\n'\\)\n    f\\.write\\(''\\.join\\(mic_vars\\)\\)\n    f\\.write\\('\\\\n'\\)\n    f\\.write\\(''\\.join\\(start_mic\\)\\)\n\n# Write new script\\.js\nwith open\\('script\\.js', 'w'\\) as f:\n    f\\.writelines\\(new_script\\)\n\nprint\\('Done\\.'\\)\nprint\\(f'  script\\.js:          \\{len\\(new_script\\)\\} lines'\\)\nprint\\(f'  submenus/matrix\\.js: \\{len\\(matrix_lines\\)\\+2\\} lines'\\)\nwl = world_content\\.count\\(chr\\(10\\)\\)\nprint\\(f'  submenus/world\\.js:  ~\\{wl\\} lines'\\)\nol = len\\(mic_vars\\)\\+len\\(start_mic\\)\\+3\nprint\\(f'  submenus/others\\.js: \\{ol\\} lines'\\)\nPYEOF$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^python3 _split\\.py$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^python3 /Users/ricsonjaymadonza/Documents/Code_Projects/Lumintale/_split\\.py 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "git checkout": true
+    }
+}
