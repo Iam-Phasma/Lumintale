@@ -30,6 +30,7 @@ let seismicPool     = null;  // unused — kept for legacy flicker guard
 let seismicRipples  = null;  // Array of active ripple objects
 let rippleColors    = null;  // per-LED color string for current ripple frame
 let rippleAnimFrame = null;
+let _rippleLastTime  = 0;
 
 // ---- Sub-effects (random mode) ----
 let subEffect          = 'classic';
@@ -93,6 +94,11 @@ function getSubEffectColor(idx) {
 function tickSubEffect(ts) {
   if (dataSource !== 'random') return;
   if (subEffect === 'classic') return;
+  // Cap to ~30fps — halves CPU/GPU cost for animated sub-effects
+  if (subEffectLastTime && ts - subEffectLastTime < 33) {
+    subEffectAnimFrame = requestAnimationFrame(tickSubEffect);
+    return;
+  }
   const dt = subEffectLastTime ? Math.min(ts - subEffectLastTime, 50) : 16;
   subEffectLastTime = ts;
   if (subEffect === 'pulse')   subEffectPhase += dt * 0.0012;
@@ -203,8 +209,9 @@ function solarElevation(lat, lon) {
 
 // LED color from solar elevation (day=white, twilight=amber, night=off)
 function daynightLEDColor(elev) {
-  if (elev > 6)   return applyBrightness('#fffde8', isLightMode ? 0.55 : 1.0); // full daylight
-  if (elev > 0)   return applyBrightness('#ffd080', isLightMode ? 0.55 : 1.0); // golden hour
+  if (elev > 15)  return applyBrightness('#fffde8', isLightMode ? 0.55 : 1.0);        // direct sunlight — 100%
+  if (elev > 6)   return applyBrightness('#fffde8', isLightMode ? 0.385 : 0.8);       // white edge near yellow PAR — 70%
+  if (elev > 0)   return applyBrightness('#ffd080', isLightMode ? 0.55 : 1.0);        // golden hour
   if (elev > -6)  return applyBrightness('#ff7840', isLightMode ? 0.55 : 1.0); // civil twilight
   if (elev > -12) return applyBrightness('#7030c0', isLightMode ? 0.55 : 1.0); // nautical twilight
   return applyBrightness('#3b0082', isLightMode ? 0.55 : 1.0); // night — indigo
@@ -314,8 +321,14 @@ function buildSeismicRipples(quakes) {
   if (!rippleAnimFrame) tickRipple();
 }
 
-function tickRipple() {
+function tickRipple(ts) {
   if (dataSource !== 'seismic' || !seismicRipples) return;
+  // Cap to ~30fps — halves CPU/GPU cost for seismic ripple animation
+  if (_rippleLastTime && ts - _rippleLastTime < 33) {
+    rippleAnimFrame = requestAnimationFrame(tickRipple);
+    return;
+  }
+  _rippleLastTime = ts;
   const now = performance.now();
   const intensity = new Float32Array(TOTAL);
 
@@ -426,7 +439,32 @@ function drawDot(idx) {
 function drawAll() {
   ctx.fillStyle = getBgColor();
   ctx.fillRect(0, 0, CW, CH);
-  for (let i = 0; i < TOTAL; i++) drawDot(i);
+  if (dataSource === 'random' && subEffect === 'classic') {
+    // Batch all off-LEDs in one path, all on-LEDs in another — reduces GPU submissions
+    // from ~14k fill() calls down to just 2, which is dramatically faster.
+    ctx.fillStyle = getOffColor();
+    ctx.beginPath();
+    for (let i = 0; i < TOTAL; i++) {
+      if (!state[i]) {
+        const [x, y] = dotXY(i);
+        ctx.moveTo(x + RADIUS, y);
+        ctx.arc(x, y, RADIUS, 0, Math.PI * 2);
+      }
+    }
+    ctx.fill();
+    if (litSet.size > 0) {
+      ctx.fillStyle = getLedColor();
+      ctx.beginPath();
+      for (const i of litSet) {
+        const [x, y] = dotXY(i);
+        ctx.moveTo(x + RADIUS, y);
+        ctx.arc(x, y, RADIUS, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+  } else {
+    for (let i = 0; i < TOTAL; i++) drawDot(i);
+  }
   if ((dataSource === 'seismic' || dataSource === 'daynight') && outlineCanvas && showMapOutline) {
     ctx.drawImage(outlineCanvas, 0, 0);
   }
@@ -665,7 +703,9 @@ function setSourceStatus(text) { sourceStatusEl.textContent = text; }
 function stopDataSource() {
   if (dataFetchTimer)  { clearInterval(dataFetchTimer); dataFetchTimer = null; }
   if (daynightTimer)   { clearInterval(daynightTimer); daynightTimer = null; }
+  if (flickerTimer)    { clearInterval(flickerTimer); flickerTimer = null; }
   if (rippleAnimFrame) { cancelAnimationFrame(rippleAnimFrame); rippleAnimFrame = null; }
+  _rippleLastTime = 0;
   if (micAnimFrame)    { cancelAnimationFrame(micAnimFrame); micAnimFrame = null; }
   if (micStream)       { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
   if (micAudioCtx)     { micAudioCtx.close(); micAudioCtx = null; }
@@ -768,14 +808,15 @@ function activateSource(src) {
   }
   subEffectGroup.style.display  = src === 'random' ? '' : 'none';
   setGeoSlidersDisabled(src === 'seismic' || src === 'daynight');
+  setSolarControlsDisabled(src === 'daynight');
   if (src === 'random' || src === 'mic') {
     // clear geo-shaped state so flicker redistributes from scratch
     state.fill(0);
     litSet.clear();
     TARGET_ON = Math.floor(TOTAL * TARGET_RATIO);
   }
-  if (src === 'random') { startSubEffect(); drawAll(); return; }
-  if (src === 'mic') { setSourceStatus('listening…'); startMic(); drawAll(); return; }
+  if (src === 'random') { startFlicker(); startSubEffect(); drawAll(); return; }
+  if (src === 'mic') { startFlicker(); setSourceStatus('listening…'); startMic(); drawAll(); return; }
   if (src === 'daynight') {
     tickDayNight();
     buildDayNightState();
@@ -796,6 +837,13 @@ const colorGroup      = document.getElementById('color-group');
 function setColorGroupDisabled(disabled) {
   colorGroup.classList.toggle('disabled-row', disabled);
   colorGroup.querySelectorAll('.color-swatch').forEach(s => s.disabled = disabled);
+}
+
+const brightnessGroup = brightnessSlider.closest('.setting-group');
+function setSolarControlsDisabled(disabled) {
+  brightnessSlider.disabled = disabled;
+  brightnessGroup.classList.toggle('disabled-row', disabled);
+  setColorGroupDisabled(disabled);
 }
 
 subEffectSelect.addEventListener('change', () => {
@@ -839,6 +887,7 @@ function resetToDefaults() {
   daynightTimeRow.style.display = 'none';
   subEffectGroup.style.display = '';
   setGeoSlidersDisabled(false);
+  setSolarControlsDisabled(false);
   subEffect = 'classic';
   subEffectSelect.value = 'classic';
   setColorGroupDisabled(false);
@@ -914,12 +963,23 @@ document.getElementById('reset-btn').addEventListener('click', resetToDefaults);
     fctx.fill();
 
     faviconEl.href = fc.toDataURL('image/png');
-    requestAnimationFrame(tickFavicon);
+    // Throttle to ~10fps — toDataURL + href DOM update at 60fps is a major CPU drain
+    setTimeout(() => requestAnimationFrame(tickFavicon), 100);
   }
 
   requestAnimationFrame(tickFavicon);
 })();
 
 window.addEventListener('resize', resize);
+
+// Pause the flicker interval when the tab is hidden — setInterval doesn't auto-pause
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (flickerTimer) { clearInterval(flickerTimer); flickerTimer = null; }
+  } else {
+    if (dataSource === 'random' || dataSource === 'mic') startFlicker();
+  }
+});
+
 resetToDefaults();
 loadWorldMap();
