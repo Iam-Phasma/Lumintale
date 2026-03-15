@@ -141,6 +141,38 @@ canvas { display: block; }
   background: rgba(255, 255, 255, 0.06);
 }
 
+/* ---- Color grid ---- */
+#color-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+
+.color-swatch {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.color-swatch:hover {
+  transform: scale(1.12);
+}
+
+.color-swatch.selected {
+  border-color: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+body.light-mode .color-swatch.selected {
+  border-color: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
 /* ---- Range slider ---- */
 input[type=range] {
   -webkit-appearance: none;
