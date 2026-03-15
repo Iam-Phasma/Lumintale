@@ -89,8 +89,8 @@ function renderClock() {
   const cardX = [
     sx,
     sx + cw + dg,
-    sx + 2 * cw + dg + cg,
-    sx + 3 * cw + 2 * dg + cg,
+    sx + 2 * cw + dg + cg + scale,
+    sx + 3 * cw + 2 * dg + cg + scale,
   ];
 
   state.fill(0);
@@ -136,7 +136,7 @@ function renderClock() {
 
   // ── colon: two lit dots centred in the gap at glyph rows 2 and 6 — blink each second ──
   if (colonOn) {
-    const dotX = sx + 2 * cw + dg + Math.floor((cg - scale) / 2);
+    const dotX = sx + 2 * cw + dg + Math.floor((cg - scale) / 2) + scale - 1;
     for (const dotRow of [2 + PAD_V, 6 + PAD_V]) {
       for (let pr = 0; pr < scale; pr++) {
         const row = sy + dotRow * scale + pr;
