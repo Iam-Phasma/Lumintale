@@ -369,11 +369,11 @@ function geoToLedIdx(lat, lon) {
   return row * COLS + col;
 }
 
-// Build ripple objects from a list of {lat, lon, mag} quake objects
+// Build ripple objects from a list of {lat, lon, mag, time} quake objects
 function buildSeismicRipples(quakes) {
-  const sorted = quakes.slice().sort((a, b) => b.mag - a.mag);
-  const top    = sorted.slice(0, 10);  // only top 10 get animated ripples
-  const rest   = sorted.slice(10);     // older/smaller quakes become static dots
+  const sorted = quakes.slice().sort((a, b) => b.time - a.time); // newest first
+  const top    = sorted.slice(0, 10);  // 10 most recent get animated ripples
+  const rest   = sorted.slice(10);     // older quakes become static dots
   seismicStaticDots = new Set(rest.map(({ lat, lon }) => geoToLedIdx(lat, lon)));
   seismicRipples = top.map(({ lat, lon, mag }) => {
     const [x, y] = geoProject(lon, lat);
@@ -430,10 +430,10 @@ function tickRipple(ts) {
     }
   }
 
-  // Static dots for 24h quakes that are not in the top-10 animated set
+  // Static dots for 24h quakes that are not in the 10 most-recent animated set
   if (seismicStaticDots && seismicStaticDots.size > 0) {
     const lm = isLightMode ? lightModeFactor(ledColor) : 1.0;
-    const dotColor = applyBrightness(ledColor, 0.3 * lm);
+    const dotColor = applyBrightness(ledColor, 1.0 * lm);
     for (const idx of seismicStaticDots) {
       if (idx >= 0 && idx < TOTAL && !rippleColors[idx]) rippleColors[idx] = dotColor;
     }
@@ -855,9 +855,10 @@ async function fetchSeismic() {
     const count  = quakes.length;
     const maxMag = count > 0 ? Math.max(...quakes.map(q => q.properties.mag || 0)) : 0;
     const mapped = quakes.map(q => ({
-      lat: q.geometry.coordinates[1],
-      lon: q.geometry.coordinates[0],
-      mag: q.properties.mag || 1.5
+      lat:  q.geometry.coordinates[1],
+      lon:  q.geometry.coordinates[0],
+      mag:  q.properties.mag || 1.5,
+      time: q.properties.time || 0
     }));
 
     // Collect recent quakes (last hour) with display info
