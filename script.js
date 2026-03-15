@@ -34,10 +34,11 @@ const ctx    = canvas.getContext('2d');
 // ---- World map (TopoJSON) ----
 let worldGeo        = null;  // GeoJSON FeatureCollection of land
 let outlineCanvas   = null;  // pre-rendered map outline (redrawn on resize)
-let seismicPool     = null;  // unused — kept for legacy flicker guard
-let seismicRipples  = null;  // Array of active ripple objects (top 10 by mag)
-let seismicStaticDots = null; // Set of LED indices for 24h quakes beyond the top 10
-let rippleColors    = null;  // per-LED color string for current ripple frame
+let seismicPool       = null;  // unused — kept for legacy flicker guard
+let seismicRipples    = null;  // Array of active ripple objects (top 10 by recency)
+let seismicStaticDots = null;  // Set of LED indices for 24h quakes beyond the top 10
+let rippleColors      = null;  // per-LED color string for current ripple frame
+let _lastSeismicData  = null;  // cached raw {lat,lon,mag,time} array for resize rebuild
 let rippleAnimFrame = null;
 let _rippleLastTime  = 0;
 
@@ -468,6 +469,26 @@ function resize() {
   TOTAL = COLS * ROWS;
   buildOutlineCanvas();
   buildLandPixelData();
+  // Rebuild seismic positions with the new grid dimensions
+  if (dataSource === 'seismic' && _lastSeismicData) {
+    const { mapped, quakes } = _lastSeismicData;
+    const now = Date.now();
+    recentSeismicQuakes = quakes
+      .filter(q => (now - q.properties.time) < RECENT_WINDOW_MS)
+      .map(q => ({
+        lat:    q.geometry.coordinates[1],
+        lon:    q.geometry.coordinates[0],
+        mag:    q.properties.mag || 1.5,
+        place:  q.properties.place || 'Unknown location',
+        time:   q.properties.time,
+        ledIdx: geoToLedIdx(q.geometry.coordinates[1], q.geometry.coordinates[0])
+      }))
+      .sort((a, b) => b.time - a.time);
+    recentSeismicLedSet = new Set(recentSeismicQuakes.map(q => q.ledIdx));
+    updateSeismicInfoOverlay();
+    buildSeismicRipples(mapped);
+    return; // buildSeismicRipples calls drawAll via tickRipple
+  }
   init();
 }
 
@@ -815,6 +836,7 @@ function stopDataSource() {
   seismicRipples    = null;
   seismicStaticDots = null;
   rippleColors      = null;
+  _lastSeismicData  = null;
   daynightColors = null;
   recentSeismicQuakes = [];
   recentSeismicLedSet = new Set();
@@ -877,6 +899,7 @@ async function fetchSeismic() {
     recentSeismicLedSet = new Set(recentSeismicQuakes.map(q => q.ledIdx));
     updateSeismicInfoOverlay();
 
+    _lastSeismicData = { mapped, quakes };
     buildSeismicRipples(mapped);
     setSourceStatus(`${count} quake${count !== 1 ? 's' : ''} · M${maxMag.toFixed(1)} max (24h)`);
   } catch { setSourceStatus('unavailable'); }
