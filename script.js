@@ -35,7 +35,8 @@ const ctx    = canvas.getContext('2d');
 let worldGeo        = null;  // GeoJSON FeatureCollection of land
 let outlineCanvas   = null;  // pre-rendered map outline (redrawn on resize)
 let seismicPool     = null;  // unused — kept for legacy flicker guard
-let seismicRipples  = null;  // Array of active ripple objects
+let seismicRipples  = null;  // Array of active ripple objects (top 10 by mag)
+let seismicStaticDots = null; // Set of LED indices for 24h quakes beyond the top 10
 let rippleColors    = null;  // per-LED color string for current ripple frame
 let rippleAnimFrame = null;
 let _rippleLastTime  = 0;
@@ -370,7 +371,10 @@ function geoToLedIdx(lat, lon) {
 
 // Build ripple objects from a list of {lat, lon, mag} quake objects
 function buildSeismicRipples(quakes) {
-  const top = quakes.slice().sort((a, b) => b.mag - a.mag).slice(0, 60);
+  const sorted = quakes.slice().sort((a, b) => b.mag - a.mag);
+  const top    = sorted.slice(0, 10);  // only top 10 get animated ripples
+  const rest   = sorted.slice(10);     // older/smaller quakes become static dots
+  seismicStaticDots = new Set(rest.map(({ lat, lon }) => geoToLedIdx(lat, lon)));
   seismicRipples = top.map(({ lat, lon, mag }) => {
     const [x, y] = geoProject(lon, lat);
     const col = Math.min(COLS - 1, Math.max(0, (x / SPACING - 0.5) | 0));
@@ -423,6 +427,15 @@ function tickRipple(ts) {
   for (let i = 0; i < TOTAL; i++) {
     if (intensity[i] > 0.03) {
       rippleColors[i] = applyBrightness(ledColor, intensity[i] * (isLightMode ? lightModeFactor(ledColor) : 1.0));
+    }
+  }
+
+  // Static dots for 24h quakes that are not in the top-10 animated set
+  if (seismicStaticDots && seismicStaticDots.size > 0) {
+    const lm = isLightMode ? lightModeFactor(ledColor) : 1.0;
+    const dotColor = applyBrightness(ledColor, 0.3 * lm);
+    for (const idx of seismicStaticDots) {
+      if (idx >= 0 && idx < TOTAL && !rippleColors[idx]) rippleColors[idx] = dotColor;
     }
   }
 
@@ -798,9 +811,10 @@ function stopDataSource() {
   if (micStream)       { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
   if (micAudioCtx)     { micAudioCtx.close(); micAudioCtx = null; }
   micAnalyser    = null;
-  seismicPool    = null;
-  seismicRipples = null;
-  rippleColors   = null;
+  seismicPool       = null;
+  seismicRipples    = null;
+  seismicStaticDots = null;
+  rippleColors      = null;
   daynightColors = null;
   recentSeismicQuakes = [];
   recentSeismicLedSet = new Set();
@@ -1131,14 +1145,27 @@ document.getElementById('reset-btn').addEventListener('click', resetToDefaults);
 
 window.addEventListener('resize', resize);
 
-// Pause the flicker interval when the tab is hidden — setInterval doesn't auto-pause
+// ---- Wake Lock — keep the screen on while the page is visible ----
+let wakeLock = null;
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+  } catch { /* permission denied or feature unavailable */ }
+}
+
+// Re-acquire after the browser releases it (e.g. tab was hidden then re-shown)
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     if (flickerTimer) { clearInterval(flickerTimer); flickerTimer = null; }
   } else {
     if (dataSource === 'random' || dataSource === 'mic') startFlicker();
+    if (wakeLock === null || wakeLock.released) requestWakeLock();
   }
 });
+
+requestWakeLock();
 
 resetToDefaults();
 loadWorldMap();
