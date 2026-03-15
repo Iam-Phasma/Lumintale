@@ -235,8 +235,8 @@ function tickDayNight() {
   const m = String(now.getUTCMinutes()).padStart(2,'0');
   const s = String(now.getUTCSeconds()).padStart(2,'0');
   daynightTimeEl.textContent = `${h}:${m}:${s}`;
-  // Rebuild solar state every minute
-  if (now.getUTCSeconds() === 0) buildDayNightState();
+  // Rebuild solar state every 10 minutes
+  if (now.getUTCSeconds() === 0 && now.getUTCMinutes() % 10 === 0) buildDayNightState();
 }
 
 function geoProject(lon, lat) {
@@ -781,7 +781,7 @@ function activateSource(src) {
   }
   setSourceStatus('fetching…');
   DATA_FETCHERS[src]();
-  dataFetchTimer = setInterval(DATA_FETCHERS[src], 60000);
+  dataFetchTimer = setInterval(DATA_FETCHERS[src], 180000);
 }
 
 sourceBtns.forEach(btn => btn.addEventListener('click', () => activateSource(btn.dataset.source)));
