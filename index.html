@@ -19,6 +19,7 @@
 
   <link rel="icon" id="favicon" type="image/png">
   <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
 </head>
 <body>
@@ -60,6 +61,11 @@
       <p class="info-value">Iam-Phasma / Lumintale</p>
       <p class="info-label">Published</p>
       <p class="info-value">March 15, 2026</p>
+      <div class="info-divider"></div>
+      <p class="info-label">Data Sources</p>
+      <p class="info-value"><a class="info-link" href="https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php" target="_blank" rel="noopener">USGS Earthquake Hazards</a> &mdash; Seismic</p>
+      <p class="info-value"><a class="info-link" href="https://cdn.jsdelivr.net/npm/world-atlas@2" target="_blank" rel="noopener">Natural Earth / world-atlas</a> &mdash; Map</p>
+      <p class="info-value"><a class="info-link" href="https://en.wikipedia.org/wiki/Solar_zenith_angle" target="_blank" rel="noopener">Solar elevation formula</a> &mdash; Solar</p>
     </div>
   </div>
 
@@ -122,7 +128,7 @@
 
     <div class="divider"></div>
 
-    <div class="setting-row">
+    <div id="light-mode-row" class="setting-row">
       <span class="setting-label">Light Mode</span>
       <div class="toggle" id="mode-toggle"><div class="toggle-thumb"></div></div>
     </div>
@@ -164,6 +170,14 @@
         <span class="setting-label" style="font-size:12.5px;opacity:0.7">Map Outline</span>
         <div class="toggle active" id="map-toggle"><div class="toggle-thumb"></div></div>
       </div>
+      <div class="setting-row" id="recent-seismic-toggle-row" style="display:none">
+        <span class="setting-label" style="font-size:12.5px;opacity:0.7">Recent Seismic</span>
+        <select id="recent-seismic-select" class="setting-select">
+          <option value="off">Off</option>
+          <option value="epicenter">Epicenter</option>
+          <option value="epicenter+info">Epicenter + Info</option>
+        </select>
+      </div>
       <div class="setting-row" id="daynight-time-row" style="display:none">
         <span class="setting-label" style="font-size:12.5px;opacity:0.7">UTC Time</span>
         <span class="setting-meta" id="daynight-time">--:--:--</span>
@@ -175,6 +189,7 @@
     <button id="reset-btn" aria-label="Reset to default settings">Reset to Default</button>
   </div>
 
+  <div id="seismic-info-overlay"></div>
   <script src="script.js"></script>
 </body>
 </html>

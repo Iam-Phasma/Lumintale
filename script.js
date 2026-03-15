@@ -40,6 +40,11 @@ let rippleColors    = null;  // per-LED color string for current ripple frame
 let rippleAnimFrame = null;
 let _rippleLastTime  = 0;
 
+let recentSeismicMode   = 'off'; // 'off' | 'epicenter' | 'epicenter+info'
+let recentSeismicQuakes = [];   // [{lat,lon,mag,place,time,ledIdx}] within last hour
+let recentSeismicLedSet = new Set();
+const RECENT_WINDOW_MS  = 3600000; // 1 hour in ms
+
 // ---- Sub-effects (random mode) ----
 let subEffect          = 'classic';
 let subEffectAnimFrame = null;
@@ -168,6 +173,45 @@ function stopSubEffect() {
   twinkleLevels = null; twinkleTargets = null;
   rainbowHues = null; rainbowSpeeds = null;
   randomRipples = null;
+}
+
+// ---- Recent Seismic helpers ----
+function getRecentHighlightColor() {
+  // Always white; fall back to red when the LED color is white
+  return ledColor.toLowerCase() === '#ffffff' ? '#ff4d4d' : '#ffffff';
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function updateSeismicInfoOverlay() {
+  const el = document.getElementById('seismic-info-overlay');
+  if (!el) return;
+  if (recentSeismicMode !== 'epicenter+info' || recentSeismicQuakes.length === 0) {
+    el.style.display = 'none';
+    return;
+  }
+  const hColor = getRecentHighlightColor();
+  const glowRGB = hColor === '#ff4d4d' ? '255,77,77' : '255,255,255';
+  el.style.display = 'flex';
+  const items = recentSeismicQuakes.slice(0, 4);
+  el.innerHTML = items.map((q, i) => {
+    const d = new Date(q.time);
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    const ss = String(d.getUTCSeconds()).padStart(2, '0');
+    const timeStr = `${hh}:${mm}:${ss} UTC`;
+    const op = (1 - i * 0.18).toFixed(2);
+    return `<div class="seismic-info-item" style="opacity:${op}">
+      <span class="seismic-info-place" style="color:${hColor};text-shadow:0 0 8px rgba(${glowRGB},0.7),0 0 22px rgba(${glowRGB},0.35)">${escapeHtml(q.place)}</span>
+      <span class="seismic-info-time" style="color:rgba(255,255,255,0.55)">${timeStr}</span>
+    </div>`;
+  }).join('');
 }
 
 // ---- Day/Night ----
@@ -381,6 +425,16 @@ function tickRipple(ts) {
       rippleColors[i] = applyBrightness(ledColor, intensity[i] * (isLightMode ? lightModeFactor(ledColor) : 1.0));
     }
   }
+
+  // Overlay recent epicentres with highlight color
+  if (recentSeismicMode !== 'off' && recentSeismicLedSet.size > 0) {
+    const hColor = getRecentHighlightColor();
+    const hStr   = applyBrightness(hColor, isLightMode ? lightModeFactor(hColor) : 1.0);
+    for (const idx of recentSeismicLedSet) {
+      if (idx >= 0 && idx < TOTAL) rippleColors[idx] = hStr;
+    }
+  }
+
   drawAll();
   rippleAnimFrame = requestAnimationFrame(tickRipple);
 }
@@ -700,17 +754,25 @@ colorSwatches.forEach(swatch => {
     swatch.classList.add('selected');
     ledColor = swatch.dataset.color;
     drawAll();
+    if (dataSource === 'seismic') updateSeismicInfoOverlay();
   });
 });
 
 // ---- Map outline toggle ----
 const mapToggle    = document.getElementById('map-toggle');
 const mapToggleRow = document.getElementById('map-toggle-row');
+const recentSeismicToggleRow = document.getElementById('recent-seismic-toggle-row');
+const recentSeismicSelect    = document.getElementById('recent-seismic-select');
 
 mapToggle.addEventListener('click', () => {
   showMapOutline = !showMapOutline;
   mapToggle.classList.toggle('active', showMapOutline);
   drawAll();
+});
+
+recentSeismicSelect.addEventListener('change', () => {
+  recentSeismicMode = recentSeismicSelect.value;
+  updateSeismicInfoOverlay();
 });
 
 // ---- Data Source ----
@@ -740,6 +802,9 @@ function stopDataSource() {
   seismicRipples = null;
   rippleColors   = null;
   daynightColors = null;
+  recentSeismicQuakes = [];
+  recentSeismicLedSet = new Set();
+  updateSeismicInfoOverlay();
   stopSubEffect();
   setSourceStatus('');
 }
@@ -780,6 +845,23 @@ async function fetchSeismic() {
       lon: q.geometry.coordinates[0],
       mag: q.properties.mag || 1.5
     }));
+
+    // Collect recent quakes (last hour) with display info
+    const now = Date.now();
+    recentSeismicQuakes = quakes
+      .filter(q => (now - q.properties.time) < RECENT_WINDOW_MS)
+      .map(q => ({
+        lat:    q.geometry.coordinates[1],
+        lon:    q.geometry.coordinates[0],
+        mag:    q.properties.mag || 1.5,
+        place:  q.properties.place || 'Unknown location',
+        time:   q.properties.time,
+        ledIdx: geoToLedIdx(q.geometry.coordinates[1], q.geometry.coordinates[0])
+      }))
+      .sort((a, b) => b.time - a.time);
+    recentSeismicLedSet = new Set(recentSeismicQuakes.map(q => q.ledIdx));
+    updateSeismicInfoOverlay();
+
     buildSeismicRipples(mapped);
     setSourceStatus(`${count} quake${count !== 1 ? 's' : ''} · M${maxMag.toFixed(1)} max (24h)`);
   } catch { setSourceStatus('unavailable'); }
@@ -821,6 +903,20 @@ function setGeoSlidersDisabled(disabled) {
   speedSlider.closest('.setting-group').classList.toggle('disabled-row', disabled);
 }
 
+const lightModeRow = document.getElementById('light-mode-row');
+
+function setLightModeDisabled(disabled) {
+  lightModeRow.classList.toggle('disabled-row', disabled);
+  modeToggle.style.pointerEvents = disabled ? 'none' : '';
+  if (disabled && isLightMode) {
+    isLightMode = false;
+    modeToggle.classList.remove('active');
+    document.body.classList.remove('light-mode');
+    buildOutlineCanvas();
+    drawAll();
+  }
+}
+
 function activateSource(src) {
   stopDataSource();
   dataSource = src;
@@ -832,14 +928,16 @@ function activateSource(src) {
       : b.dataset.source === src;
     b.classList.toggle('active', isActive);
   });
-  mapToggleRow.style.display    = (src === 'seismic' || src === 'daynight') ? 'flex' : 'none';
-  daynightTimeRow.style.display = src === 'daynight' ? 'flex' : 'none';
+  mapToggleRow.style.display          = (src === 'seismic' || src === 'daynight') ? 'flex' : 'none';
+  recentSeismicToggleRow.style.display = src === 'seismic' ? 'flex' : 'none';
+  daynightTimeRow.style.display        = src === 'daynight' ? 'flex' : 'none';
   if (src === 'seismic' || src === 'daynight') {
     showMapOutline = src === 'seismic';
     mapToggle.classList.toggle('active', showMapOutline);
   }
   setGeoSlidersDisabled(src === 'seismic' || src === 'daynight');
   setSolarControlsDisabled(src === 'daynight');
+  setLightModeDisabled(src === 'seismic' || src === 'daynight');
   if (src === 'random' || src === 'mic') {
     // clear geo-shaped state so flicker redistributes from scratch
     state.fill(0);
@@ -942,10 +1040,16 @@ function resetToDefaults() {
   showMapOutline = false;
   mapToggle.classList.remove('active');
   mapToggleRow.style.display = 'none';
+  recentSeismicMode = 'off';
+  if (recentSeismicSelect) recentSeismicSelect.value = 'off';
+  recentSeismicToggleRow.style.display = 'none';
+  recentSeismicQuakes = [];
+  recentSeismicLedSet = new Set();
   daynightTimeRow.style.display = 'none';
   setGeoSlidersDisabled(false);
   setSolarControlsDisabled(false);
   setColorGroupDisabled(false);
+  setLightModeDisabled(false);
 
   resize();
   startFlicker();
