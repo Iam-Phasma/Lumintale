@@ -12,6 +12,10 @@
             "approve": true,
             "matchCommandLine": true
         },
-        "git checkout": true
+        "git checkout": true,
+        "/^python3 bake_land\\.py$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
     }
 }

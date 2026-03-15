@@ -46,7 +46,7 @@ function resize() {
   ROWS  = Math.floor(CH / SPACING);
   TOTAL = COLS * ROWS;
   buildOutlineCanvas();
-  buildLandPixelData();
+  // No need to rebuild land data on resize — the pre-baked bitmap is viewport-independent.
   // Rebuild solar/day-night state with the new grid dimensions
   if (dataSource === 'daynight') {
     state = new Uint8Array(TOTAL);

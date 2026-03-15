@@ -37,4 +37,5 @@ sourceSubBtns.forEach(btn => {
 
 // ---- Initialise ----
 resetToDefaults();
-loadWorldMap();
+loadLandData();   // pre-baked bitmap — fast O(1) isOnLand(); runs bake_land.py to regenerate
+loadWorldMap();   // TopoJSON — cosmetic outline canvas only
