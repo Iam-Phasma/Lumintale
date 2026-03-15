@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LED Grid</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <button id="settings-btn" aria-label="Settings">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+  </button>
+
+  <div id="settings-panel">
+    <p class="panel-title">Settings</p>
+
+    <div class="setting-group">
+      <div class="setting-row">
+        <span class="setting-label">LED Density</span>
+        <span class="setting-meta" id="density-val">10 /in</span>
+      </div>
+      <input type="range" id="density-slider" min="5" max="20" value="10" step="1">
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="setting-group">
+      <div class="setting-row">
+        <span class="setting-label">Lights On</span>
+        <span class="setting-meta" id="coverage-val">18%</span>
+      </div>
+      <input type="range" id="coverage-slider" min="10" max="90" value="18" step="1">
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="setting-row">
+      <span class="setting-label">Light Mode</span>
+      <div class="toggle" id="mode-toggle"><div class="toggle-thumb"></div></div>
+    </div>
+  </div>
+
+  <script>
+    let SPACING = 10;
+    const RADIUS = 1.5;
+    let isLightMode = false;
+
+    const getBgColor  = () => isLightMode ? '#e0e0e0' : '#1f1f1f';
+    const getOffColor = () => isLightMode ? '#c2c2c2' : '#181818';
+    const getLedColor = () => isLightMode ? '#d63031' : '#f5d76e';
+
+    const canvas = document.getElementById('c');
+    const ctx    = canvas.getContext('2d');
+
+    let COLS, ROWS, TOTAL;
+
+    function resize() {
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+      COLS  = Math.floor(canvas.width  / SPACING);
+      ROWS  = Math.floor(canvas.height / SPACING);
+      TOTAL = COLS * ROWS;
+      init();
+    }
+
+    let state, litSet, TARGET_ON;
+    let TARGET_RATIO = 0.18;
+
+    function init() {
+      state     = new Uint8Array(TOTAL);
+      litSet    = new Set();
+      TARGET_ON = Math.floor(TOTAL * TARGET_RATIO);
+      for (let i = 0; i < TARGET_ON; i++) turnOnRandom();
+      drawAll();
+    }
+
+    function turnOnRandom() {
+      if (litSet.size >= TOTAL) return;
+      let idx;
+      do { idx = (Math.random() * TOTAL) | 0; } while (state[idx] !== 0);
+      state[idx] = 1;
+      litSet.add(idx);
+    }
+
+    function dotXY(idx) {
+      const col = idx % COLS;
+      const row = (idx / COLS) | 0;
+      return [(col + 0.5) * SPACING, (row + 0.5) * SPACING];
+    }
+
+    function drawDot(idx) {
+      const [x, y] = dotXY(idx);
+      ctx.beginPath();
+      ctx.arc(x, y, RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = state[idx] ? getLedColor() : getOffColor();
+      ctx.fill();
+    }
+
+    function drawAll() {
+      ctx.fillStyle = getBgColor();
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < TOTAL; i++) drawDot(i);
+    }
+
+    const dirty = new Set();
+
+    function flicker() {
+      const n = litSet.size;
+      const changes = 4;
+      for (let c = 0; c < changes; c++) {
+        if (n < TARGET_ON) {
+          const prev = litSet.size === 0 ? -1 : [...litSet][0];
+          turnOnRandom();
+          if (litSet.size > (prev === -1 ? 0 : 1)) dirty.add([...litSet][litSet.size - 1]);
+        } else if (n > TARGET_ON || Math.random() < 0.5) {
+          if (litSet.size > 0) {
+            const arr = [...litSet];
+            const idx = arr[(Math.random() * arr.length) | 0];
+            dirty.add(idx); state[idx] = 0; litSet.delete(idx);
+          }
+        } else {
+          if (litSet.size > 0) {
+            const arr = [...litSet];
+            const offIdx = arr[(Math.random() * arr.length) | 0];
+            dirty.add(offIdx); state[offIdx] = 0; litSet.delete(offIdx);
+          }
+          let idx;
+          do { idx = (Math.random() * TOTAL) | 0; } while (state[idx] !== 0);
+          state[idx] = 1; litSet.add(idx); dirty.add(idx);
+        }
+      }
+      for (const idx of dirty) {
+        const [x, y] = dotXY(idx);
+        const r = RADIUS + 1;
+        ctx.fillStyle = getBgColor();
+        ctx.fillRect(x - r, y - r, r * 2, r * 2);
+        drawDot(idx);
+      }
+      dirty.clear();
+    }
+
+    // ---- Settings ----
+    const settingsBtn   = document.getElementById('settings-btn');
+    const settingsPanel = document.getElementById('settings-panel');
+    const densitySlider  = document.getElementById('density-slider');
+    const densityValEl   = document.getElementById('density-val');
+    const coverageSlider = document.getElementById('coverage-slider');
+    const coverageValEl  = document.getElementById('coverage-val');
+    const modeToggle     = document.getElementById('mode-toggle');
+    let panelOpen = false;
+
+    document.addEventListener('mousemove', (e) => {
+      const r = settingsBtn.getBoundingClientRect();
+      const dist = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
+      settingsBtn.classList.toggle('near', dist < 160);
+    });
+
+    settingsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      panelOpen ? closePanel() : openPanel();
+    });
+
+    function openPanel() {
+      panelOpen = true;
+      settingsPanel.classList.remove('closing');
+      settingsPanel.classList.add('open');
+    }
+
+    function closePanel() {
+      if (!panelOpen) return;
+      panelOpen = false;
+      settingsPanel.classList.add('closing');
+      settingsPanel.addEventListener('animationend', () => {
+        settingsPanel.classList.remove('open', 'closing');
+      }, { once: true });
+    }
+
+    document.addEventListener('click', (e) => {
+      if (panelOpen && !settingsPanel.contains(e.target) && e.target !== settingsBtn) closePanel();
+    });
+
+    densitySlider.addEventListener('input', () => {
+      const lpi = parseInt(densitySlider.value);
+      densityValEl.textContent = lpi + ' /in';
+      SPACING = Math.max(5, Math.round(96 / lpi));
+      resize();
+    });
+
+    coverageSlider.addEventListener('input', () => {
+      const pct = parseInt(coverageSlider.value);
+      coverageValEl.textContent = pct + '%';
+      TARGET_RATIO = pct / 100;
+      TARGET_ON = Math.floor(TOTAL * TARGET_RATIO);
+    });
+
+    modeToggle.addEventListener('click', () => {
+      isLightMode = !isLightMode;
+      modeToggle.classList.toggle('active', isLightMode);
+      document.body.classList.toggle('light-mode', isLightMode);
+      drawAll();
+    });
+
+    window.addEventListener('resize', resize);
+    resize();
+    setInterval(flicker, 80);
+  </script>
+</body>
+</html>
