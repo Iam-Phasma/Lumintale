@@ -37,6 +37,7 @@ let outlineCanvas   = null;  // pre-rendered map outline (redrawn on resize)
 let seismicPool       = null;  // unused — kept for legacy flicker guard
 let seismicRipples    = null;  // Array of active ripple objects (top 10 by recency)
 let seismicStaticDots = null;  // Set of LED indices for 24h quakes beyond the top 10
+let seismicDotPhases  = null;  // Map<ledIdx, {phase, speed}> for twinkle animation
 let rippleColors      = null;  // per-LED color string for current ripple frame
 let _lastSeismicData  = null;  // cached raw {lat,lon,mag,time} array for resize rebuild
 let rippleAnimFrame = null;
@@ -374,8 +375,13 @@ function geoToLedIdx(lat, lon) {
 function buildSeismicRipples(quakes) {
   const sorted = quakes.slice().sort((a, b) => b.time - a.time); // newest first
   const top    = sorted.slice(0, 10);  // 10 most recent get animated ripples
-  const rest   = sorted.slice(10);     // older quakes become static dots
+  const rest   = sorted.slice(10);     // older quakes become twinkling dots
   seismicStaticDots = new Set(rest.map(({ lat, lon }) => geoToLedIdx(lat, lon)));
+  // Assign each dot a unique random twinkle phase and speed
+  seismicDotPhases = new Map();
+  for (const idx of seismicStaticDots) {
+    seismicDotPhases.set(idx, { phase: Math.random() * Math.PI * 2, speed: 0.0008 + Math.random() * 0.0016 });
+  }
   seismicRipples = top.map(({ lat, lon, mag }) => {
     const [x, y] = geoProject(lon, lat);
     const col = Math.min(COLS - 1, Math.max(0, (x / SPACING - 0.5) | 0));
@@ -431,12 +437,16 @@ function tickRipple(ts) {
     }
   }
 
-  // Static dots for 24h quakes that are not in the 10 most-recent animated set
+  // Twinkling dots for 24h quakes that are not in the 10 most-recent animated set
   if (seismicStaticDots && seismicStaticDots.size > 0) {
     const lm = isLightMode ? lightModeFactor(ledColor) : 1.0;
-    const dotColor = applyBrightness(ledColor, 1.0 * lm);
+    const elapsed = now - (_rippleLastTime || now);
     for (const idx of seismicStaticDots) {
-      if (idx >= 0 && idx < TOTAL && !rippleColors[idx]) rippleColors[idx] = dotColor;
+      if (idx < 0 || idx >= TOTAL || rippleColors[idx]) continue;
+      const p = seismicDotPhases.get(idx);
+      if (p) p.phase += elapsed * p.speed;
+      const brightness = p ? (0.35 + 0.65 * (Math.sin(p ? p.phase : 0) * 0.5 + 0.5)) : 1.0;
+      rippleColors[idx] = applyBrightness(ledColor, brightness * lm);
     }
   }
 
@@ -835,6 +845,7 @@ function stopDataSource() {
   seismicPool       = null;
   seismicRipples    = null;
   seismicStaticDots = null;
+  seismicDotPhases  = null;
   rippleColors      = null;
   _lastSeismicData  = null;
   daynightColors = null;
