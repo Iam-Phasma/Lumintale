@@ -17,8 +17,16 @@ function applyBrightness(hex, extra = 1.0) {
   return `rgb(${Math.round(r*f)},${Math.round(g*f)},${Math.round(b*f)})`;
 }
 
-// In light mode, darken LEDs so they contrast against the pale background
-const getLedColor = () => applyBrightness(ledColor, isLightMode ? 0.55 : 1.0);
+// In light mode: saturated colors stay vivid (factor 1.0); near-white would vanish
+// against the pale background so push it to near-black instead.
+function lightModeFactor(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return (r > 200 && g > 200 && b > 200) ? 0.18 : 1.0;
+}
+
+const getLedColor = () => applyBrightness(ledColor, isLightMode ? lightModeFactor(ledColor) : 1.0);
 
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
@@ -51,7 +59,7 @@ function hslToRgbStr(h, s, l) {
 }
 
 function getSubEffectColor(idx) {
-  const lm = isLightMode ? 0.55 : 1.0;
+  const lm = isLightMode ? lightModeFactor(ledColor) : 1.0;
   if (subEffect === 'pulse') {
     const b = 0.15 + 0.85 * (Math.sin(subEffectPhase) * 0.5 + 0.5);
     return applyBrightness(ledColor, b * lm);
@@ -63,7 +71,8 @@ function getSubEffectColor(idx) {
   }
   if (subEffect === 'rainbow') {
     const hue = rainbowHues ? rainbowHues[idx] : Math.random();
-    return hslToRgbStr(hue, 1, 0.55 * lm);
+    // In light mode use L=0.4 for vivid hues that pop against the pale background
+    return hslToRgbStr(hue, 1, isLightMode ? 0.4 : 0.55);
   }
   if (subEffect === 'twinkle') {
     const b = twinkleLevels ? (twinkleLevels[idx] || 0.1) : 1.0;
@@ -209,12 +218,22 @@ function solarElevation(lat, lon) {
 
 // LED color from solar elevation (day=white, twilight=amber, night=off)
 function daynightLEDColor(elev) {
-  if (elev > 15)  return applyBrightness('#fffde8', isLightMode ? 0.55 : 1.0);        // direct sunlight — 100%
-  if (elev > 6)   return applyBrightness('#fffde8', isLightMode ? 0.385 : 0.8);       // white edge near yellow PAR — 70%
-  if (elev > 0)   return applyBrightness('#ffd080', isLightMode ? 0.55 : 1.0);        // golden hour
-  if (elev > -6)  return applyBrightness('#ff7840', isLightMode ? 0.55 : 1.0); // civil twilight
-  if (elev > -12) return applyBrightness('#7030c0', isLightMode ? 0.55 : 1.0); // nautical twilight
-  return applyBrightness('#3b0082', isLightMode ? 0.55 : 1.0); // night — indigo
+  if (isLightMode) {
+    // Near-white sunlight colors are invisible on the pale bg — render as dark marks.
+    // Saturated twilight/night colors stay vivid; they contrast naturally.
+    if (elev > 15)  return applyBrightness('#fffde8', 0.18);  // sunlight → dark khaki
+    if (elev > 6)   return applyBrightness('#fffde8', 0.13);  // softer sunlight edge
+    if (elev > 0)   return applyBrightness('#ffd080', 1.0);   // golden hour — vivid amber
+    if (elev > -6)  return applyBrightness('#ff7840', 1.0);   // civil twilight — vivid orange
+    if (elev > -12) return applyBrightness('#7030c0', 1.0);   // nautical twilight — vivid purple
+    return applyBrightness('#3b0082', 1.0);                    // night — vivid indigo
+  }
+  if (elev > 15)  return applyBrightness('#fffde8', 1.0);       // direct sunlight — 100%
+  if (elev > 6)   return applyBrightness('#fffde8', 0.8);       // white edge near yellow PAR — 70%
+  if (elev > 0)   return applyBrightness('#ffd080', 1.0);       // golden hour
+  if (elev > -6)  return applyBrightness('#ff7840', 1.0);       // civil twilight
+  if (elev > -12) return applyBrightness('#7030c0', 1.0);       // nautical twilight
+  return applyBrightness('#3b0082', 1.0);                        // night — indigo
 }
 
 function buildDayNightState() {
@@ -359,7 +378,7 @@ function tickRipple(ts) {
   rippleColors = new Array(TOTAL).fill(null);
   for (let i = 0; i < TOTAL; i++) {
     if (intensity[i] > 0.03) {
-      rippleColors[i] = applyBrightness(ledColor, intensity[i] * (isLightMode ? 0.55 : 1.0));
+      rippleColors[i] = applyBrightness(ledColor, intensity[i] * (isLightMode ? lightModeFactor(ledColor) : 1.0));
     }
   }
   drawAll();
@@ -386,7 +405,7 @@ function resize() {
 }
 
 let state, litSet, TARGET_ON;
-let TARGET_RATIO = 0.05;
+let TARGET_RATIO = 0.03;
 
 function init() {
   state     = new Uint8Array(TOTAL);
@@ -561,8 +580,8 @@ document.addEventListener('mousemove', (e) => {
   const distS = Math.hypot(e.clientX - (rs.left + rs.width / 2), e.clientY - (rs.top + rs.height / 2));
   const distF = Math.hypot(e.clientX - (rf.left + rf.width / 2), e.clientY - (rf.top + rf.height / 2));
   const distI = Math.hypot(e.clientX - (ri.left + ri.width / 2), e.clientY - (ri.top + ri.height / 2));
-  const nearTop = distS < 160 || distF < 160;
-  const nearInfo = distI < 160;
+  const nearTop = panelOpen || distS < 160 || distF < 160;
+  const nearInfo = infoOpen || distI < 160;
   settingsBtn.classList.toggle('near', nearTop);
   fullscreenBtn.classList.toggle('near', nearTop);
   infoBtn.classList.toggle('near', nearInfo);
@@ -577,6 +596,8 @@ function openPanel() {
   panelOpen = true;
   settingsPanel.classList.remove('closing');
   settingsPanel.classList.add('open');
+  settingsBtn.classList.add('near');
+  fullscreenBtn.classList.add('near');
 }
 
 function closePanel() {
@@ -594,6 +615,7 @@ function openInfoModal() {
   infoOpen = true;
   infoModal.classList.remove('closing');
   infoModal.classList.add('open');
+  infoBtn.classList.add('near');
 }
 
 function closeInfoModal() {
@@ -608,6 +630,9 @@ function closeInfoModal() {
 document.addEventListener('click', (e) => {
   if (panelOpen && !settingsPanel.contains(e.target) && e.target !== settingsBtn) closePanel();
   if (infoOpen && !infoModal.contains(e.target) && e.target !== infoBtn) closeInfoModal();
+  if (!e.target.closest('.source-cat-wrap')) {
+    document.querySelectorAll('.source-cat-wrap').forEach(w => w.classList.remove('open'));
+  }
 });
 
 infoBtn.addEventListener('click', (e) => {
@@ -690,7 +715,8 @@ mapToggle.addEventListener('click', () => {
 
 // ---- Data Source ----
 const sourceStatusEl = document.getElementById('source-status');
-const sourceBtns     = document.querySelectorAll('.source-btn');
+const sourceCatBtns  = document.querySelectorAll('.source-cat-btn');
+const sourceSubBtns  = document.querySelectorAll('.source-sub-btn');
 let dataSource    = 'random';
 let dataFetchTimer = null;
 let micStream     = null;
@@ -780,8 +806,7 @@ async function startMic() {
     tick();
   } catch {
     setSourceStatus('mic denied');
-    dataSource = 'random';
-    sourceBtns.forEach(b => b.classList.toggle('active', b.dataset.source === 'random'));
+    activateSource('random');
   }
 }
 
@@ -799,14 +824,20 @@ function setGeoSlidersDisabled(disabled) {
 function activateSource(src) {
   stopDataSource();
   dataSource = src;
-  sourceBtns.forEach(b => b.classList.toggle('active', b.dataset.source === src));
+  const cat = categoryForSource(src);
+  sourceCatBtns.forEach(b => b.classList.toggle('active', b.dataset.category === cat));
+  sourceSubBtns.forEach(b => {
+    const isActive = src === 'random'
+      ? (b.dataset.source === 'random' && b.dataset.effect === subEffect)
+      : b.dataset.source === src;
+    b.classList.toggle('active', isActive);
+  });
   mapToggleRow.style.display    = (src === 'seismic' || src === 'daynight') ? 'flex' : 'none';
   daynightTimeRow.style.display = src === 'daynight' ? 'flex' : 'none';
   if (src === 'seismic' || src === 'daynight') {
     showMapOutline = src === 'seismic';
     mapToggle.classList.toggle('active', showMapOutline);
   }
-  subEffectGroup.style.display  = src === 'random' ? '' : 'none';
   setGeoSlidersDisabled(src === 'seismic' || src === 'daynight');
   setSolarControlsDisabled(src === 'daynight');
   if (src === 'random' || src === 'mic') {
@@ -828,10 +859,41 @@ function activateSource(src) {
   dataFetchTimer = setInterval(DATA_FETCHERS[src], 180000);
 }
 
-sourceBtns.forEach(btn => btn.addEventListener('click', () => activateSource(btn.dataset.source)));
+function categoryForSource(src) {
+  if (src === 'random') return 'matrix';
+  if (src === 'seismic' || src === 'daynight') return 'world';
+  return 'others';
+}
 
-const subEffectGroup  = document.getElementById('sub-effect-group');
-const subEffectSelect = document.getElementById('sub-effect-select');
+sourceCatBtns.forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wrap = btn.closest('.source-cat-wrap');
+    const isOpen = wrap.classList.contains('open');
+    document.querySelectorAll('.source-cat-wrap').forEach(w => w.classList.remove('open'));
+    if (!isOpen) wrap.classList.add('open');
+  });
+});
+
+sourceSubBtns.forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const src = btn.dataset.source;
+    const effect = btn.dataset.effect;
+    if (effect) {
+      if (dataSource !== 'random') activateSource('random');
+      subEffect = effect;
+      setColorGroupDisabled(subEffect === 'rainbow');
+      sourceSubBtns.forEach(b => b.classList.toggle('active', b === btn));
+      startSubEffect();
+      if (subEffect === 'classic') drawAll();
+    } else {
+      activateSource(src);
+    }
+    document.querySelectorAll('.source-cat-wrap').forEach(w => w.classList.remove('open'));
+  });
+});
+
 const colorGroup      = document.getElementById('color-group');
 
 function setColorGroupDisabled(disabled) {
@@ -846,21 +908,14 @@ function setSolarControlsDisabled(disabled) {
   setColorGroupDisabled(disabled);
 }
 
-subEffectSelect.addEventListener('change', () => {
-  subEffect = subEffectSelect.value;
-  setColorGroupDisabled(subEffect === 'rainbow');
-  startSubEffect();
-  if (subEffect === 'classic') drawAll();
-});
-
 function resetToDefaults() {
   densitySlider.value = 8;
   densityValEl.textContent = '8 /in';
   SPACING = Math.max(5, Math.round(96 / 8));
 
-  coverageSlider.value = 5;
-  coverageValEl.textContent = '5%';
-  TARGET_RATIO = 0.05;
+  coverageSlider.value = 3;
+  coverageValEl.textContent = '3%';
+  TARGET_RATIO = 0.03;
 
   speedSlider.value = 3;
   speedValEl.textContent = 'Normal';
@@ -880,16 +935,16 @@ function resetToDefaults() {
 
   stopDataSource();
   dataSource = 'random';
-  sourceBtns.forEach(b => b.classList.toggle('active', b.dataset.source === 'random'));
+  subEffect = 'classic';
+  sourceCatBtns.forEach(b => b.classList.toggle('active', b.dataset.category === 'matrix'));
+  document.querySelectorAll('.source-cat-wrap').forEach(w => w.classList.remove('open'));
+  sourceSubBtns.forEach(b => b.classList.toggle('active', b.dataset.effect === 'classic'));
   showMapOutline = false;
   mapToggle.classList.remove('active');
   mapToggleRow.style.display = 'none';
   daynightTimeRow.style.display = 'none';
-  subEffectGroup.style.display = '';
   setGeoSlidersDisabled(false);
   setSolarControlsDisabled(false);
-  subEffect = 'classic';
-  subEffectSelect.value = 'classic';
   setColorGroupDisabled(false);
 
   resize();

@@ -53,11 +53,13 @@
   <div id="info-modal">
     <div id="info-modal-content">
       <p class="info-title">Lumintale</p>
-      <p class="info-version">v1.0 &mdash; March 2026</p>
+      <p class="info-version">v1.0</p>
       <p class="info-desc">An ambient LED grid visualizer with real-world data sources &mdash; seismic activity, solar day/night, microphone, and animated effects.</p>
       <div class="info-divider"></div>
       <p class="info-label">Repository</p>
       <p class="info-value">Iam-Phasma / Lumintale</p>
+      <p class="info-label">Published</p>
+      <p class="info-value">March 15, 2026</p>
     </div>
   </div>
 
@@ -77,9 +79,9 @@
     <div class="setting-group">
       <div class="setting-row">
         <span class="setting-label">Lights On</span>
-        <span class="setting-meta" id="coverage-val">5%</span>
+        <span class="setting-meta" id="coverage-val">3%</span>
       </div>
-      <input type="range" id="coverage-slider" min="1" max="90" value="5" step="1" autocomplete="off">
+      <input type="range" id="coverage-slider" min="1" max="90" value="3" step="1" autocomplete="off">
     </div>
 
     <div class="divider"></div>
@@ -132,11 +134,31 @@
         <span class="setting-label">Data Source</span>
         <span class="setting-meta" id="source-status"></span>
       </div>
-      <div id="source-grid">
-        <button class="source-btn active" data-source="random">Random</button>
-        <button class="source-btn" data-source="seismic">Seismic</button>
-        <button class="source-btn" data-source="daynight">Solar</button>
-        <button class="source-btn" data-source="mic">Sound</button>
+      <div id="source-categories">
+        <div class="source-cat-wrap">
+          <button class="source-cat-btn active" data-category="matrix">Matrix <svg class="cat-chevron" width="8" height="8" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg></button>
+          <div id="submenu-matrix" class="source-submenu">
+            <button class="source-sub-btn active" data-source="random" data-effect="classic">Classic</button>
+            <button class="source-sub-btn" data-source="random" data-effect="pulse">Pulse</button>
+            <button class="source-sub-btn" data-source="random" data-effect="wave">Wave</button>
+            <button class="source-sub-btn" data-source="random" data-effect="rainbow">Rainbow</button>
+            <button class="source-sub-btn" data-source="random" data-effect="twinkle">Twinkle</button>
+            <button class="source-sub-btn" data-source="random" data-effect="ripple">Ripple</button>
+          </div>
+        </div>
+        <div class="source-cat-wrap">
+          <button class="source-cat-btn" data-category="world">World <svg class="cat-chevron" width="8" height="8" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg></button>
+          <div id="submenu-world" class="source-submenu">
+            <button class="source-sub-btn" data-source="seismic">Seismic</button>
+            <button class="source-sub-btn" data-source="daynight">Solar</button>
+          </div>
+        </div>
+        <div class="source-cat-wrap">
+          <button class="source-cat-btn" data-category="others">Others <svg class="cat-chevron" width="8" height="8" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg></button>
+          <div id="submenu-others" class="source-submenu">
+            <button class="source-sub-btn" data-source="mic">Sound</button>
+          </div>
+        </div>
       </div>
       <div class="setting-row" id="map-toggle-row" style="display:none">
         <span class="setting-label" style="font-size:12.5px;opacity:0.7">Map Outline</span>
@@ -145,22 +167,6 @@
       <div class="setting-row" id="daynight-time-row" style="display:none">
         <span class="setting-label" style="font-size:12.5px;opacity:0.7">UTC Time</span>
         <span class="setting-meta" id="daynight-time">--:--:--</span>
-      </div>
-    </div>
-
-    <div class="divider"></div>
-
-    <div class="setting-group" id="sub-effect-group">
-      <div class="setting-row">
-        <span class="setting-label">Effect</span>
-        <select id="sub-effect-select" class="setting-select">
-          <option value="classic">Classic</option>
-          <option value="pulse">Pulse</option>
-          <option value="wave">Wave</option>
-          <option value="rainbow">Rainbow</option>
-          <option value="twinkle">Twinkle</option>
-          <option value="ripple">Ripple</option>
-        </select>
       </div>
     </div>
 

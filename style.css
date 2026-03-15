@@ -273,33 +273,101 @@ input[type=range]::-webkit-slider-thumb:hover {
 }
 
 /* ---- Data source buttons ---- */
-#source-grid {
+#source-categories {
   display: flex;
   gap: 5px;
 }
 
-.source-btn {
+.source-cat-wrap {
+  position: relative;
   flex: 1;
+}
+
+.source-submenu {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  min-width: 100%;
+  background: rgba(28, 28, 28, 0.96);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 5px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px) scale(0.97);
+  transform-origin: top center;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.source-cat-wrap.open .source-submenu {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.source-cat-btn {
+  width: 100%;
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 10.5px;
-  font-weight: 500;
-  padding: 6px 2px;
+  font-weight: 600;
+  padding: 6px 6px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.09);
   background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.4);
   cursor: pointer;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
-.source-btn:hover {
+.cat-chevron {
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: transform 0.2s ease;
+}
+.source-cat-wrap.open .cat-chevron {
+  transform: rotate(180deg);
+}
+.source-cat-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.75);
 }
-.source-btn.active {
+.source-cat-btn.active {
   background: rgba(255, 255, 255, 0.11);
   border-color: rgba(255, 255, 255, 0.28);
   color: rgba(255, 255, 255, 0.95);
+}
+
+.source-sub-btn {
+  width: 100%;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.source-sub-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+.source-sub-btn.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
 }
 
 /* ---- Light mode overrides ---- */
@@ -347,19 +415,35 @@ body.light-mode .toggle {
 body.light-mode .toggle.active {
   background: #d63031;
 }
-body.light-mode .source-btn {
+body.light-mode .source-cat-btn {
   border-color: rgba(0, 0, 0, 0.09);
   background: rgba(0, 0, 0, 0.04);
   color: rgba(0, 0, 0, 0.4);
 }
-body.light-mode .source-btn:hover {
+body.light-mode .source-cat-btn:hover {
   background: rgba(0, 0, 0, 0.08);
   color: rgba(0, 0, 0, 0.7);
 }
-body.light-mode .source-btn.active {
+body.light-mode .source-cat-btn.active {
   background: rgba(0, 0, 0, 0.09);
   border-color: rgba(0, 0, 0, 0.28);
   color: rgba(0, 0, 0, 0.85);
+}
+body.light-mode .source-submenu {
+  background: rgba(240, 240, 240, 0.97);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+body.light-mode .source-sub-btn {
+  color: rgba(0, 0, 0, 0.5);
+}
+body.light-mode .source-sub-btn:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: rgba(0, 0, 0, 0.85);
+}
+body.light-mode .source-sub-btn.active {
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.9);
+  font-weight: 600;
 }
 
 /* ---- Reset to Default button ---- */
