@@ -1,5 +1,5 @@
 let SPACING = 10;
-const RADIUS = 1.5;
+const RADIUS = 2;
 let DPR = 1, CW = 0, CH = 0; // physical pixel ratio and CSS viewport dimensions
 let isLightMode = false;
 let ledColor = '#ffffff';
@@ -401,7 +401,10 @@ function turnOnRandom() {
 function dotXY(idx) {
   const col = idx % COLS;
   const row = (idx / COLS) | 0;
-  return [(col + 0.5) * SPACING, (row + 0.5) * SPACING];
+  // Snap to physical pixel boundaries to prevent sub-pixel antialiasing blur
+  const x = Math.round((col + 0.5) * SPACING * DPR) / DPR;
+  const y = Math.round((row + 0.5) * SPACING * DPR) / DPR;
+  return [x, y];
 }
 
 function drawDot(idx) {
