@@ -83,6 +83,8 @@ function resize() {
     buildSeismicRipples(mapped);
     return; // buildSeismicRipples calls drawAll via tickRipple
   }
+  if (dataSource === 'clock')  { renderClock(); return; }
+  if (dataSource === 'webcam') { return; } // tickWebcam picks up the new COLS/ROWS on its next frame
   init();
 }
 
@@ -426,6 +428,8 @@ function stopDataSource() {
   if (micStream)       { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
   if (micAudioCtx)     { micAudioCtx.close(); micAudioCtx = null; }
   micAnalyser    = null;
+  stopClock();
+  stopWebcam();
   seismicPool       = null;
   seismicRipples    = null;
   seismicStaticDots = null;
@@ -513,6 +517,25 @@ function activateSource(src) {
     mapToggle.classList.toggle('active', showMapOutline);
   }
   setGeoSlidersDisabled(src === 'seismic' || src === 'daynight' || src === 'iss');
+  // Clock disables coverage + speed; webcam disables speed (coverage = exposure threshold)
+  if (src === 'clock' || src === 'webcam') {
+    speedSlider.disabled = true;
+    speedSlider.closest('.setting-group').classList.add('disabled-row');
+  }
+  if (src === 'clock') {
+    coverageSlider.disabled = true;
+    coverageSlider.closest('.setting-group').classList.add('disabled-row');
+  }
+  // World + Others: lock density to 8 so geo/clock/webcam renders are always readable
+  if (src !== 'random') {
+    const densityChanged = parseInt(densitySlider.value) !== 8;
+    densitySlider.value = 8;
+    densityValEl.textContent = '8 /in';
+    SPACING = Math.max(5, Math.round(96 / 8));
+    densitySlider.disabled = true;
+    densitySlider.closest('.setting-group').classList.add('disabled-row');
+    if (densityChanged) resize(); // rebuild COLS/ROWS before source starts
+  }
   setSolarControlsDisabled(src === 'daynight' || src === 'iss');
   setLightModeDisabled(src === 'seismic' || src === 'daynight' || src === 'iss');
   if (src === 'random' || src === 'mic') {
@@ -523,6 +546,8 @@ function activateSource(src) {
   }
   if (src === 'random') { startFlicker(); startSubEffect(); drawAll(); return; }
   if (src === 'mic') { startFlicker(); setSourceStatus('listening…'); startMic(); drawAll(); return; }
+  if (src === 'clock')  { startClock();  return; }
+  if (src === 'webcam') { state.fill(0); litSet.clear(); startWebcam(); return; }
   if (src === 'daynight') {
     tickDayNight();
     buildDayNightState();
