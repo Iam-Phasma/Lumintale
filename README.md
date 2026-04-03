@@ -2,6 +2,8 @@
 
 Lumintale is a browser-based ambient LED grid visualizer. It renders a full-screen LED matrix and can drive the pattern from animated effects, world data feeds, and live device input.
 
+Open: https://iam-phasma.github.io/Lumintale/
+
 ## Highlights
 
 - Full-screen LED matrix canvas with configurable:
